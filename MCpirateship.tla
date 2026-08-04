@@ -8,7 +8,7 @@ MCTimeout(r) ==
     /\ view[r] + 1 \in MCViews
     /\ PS!Timeout(r)
 
-Symmertry ==
+Symmetry ==
     Permutations(R)
 
 MaxLogLength ==
