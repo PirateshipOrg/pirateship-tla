@@ -175,7 +175,6 @@ TypeOK ==
 
 \* We begin in view 0 with a non-deterministically chosen replica as primary.
 Init == 
-    \* Compare src/consensus/handler.rs#ConsensusState
     /\ view = [r \in R |-> 0]
     /\ network = [r \in R |-> [s \in R |-> <<>>]]
     /\ log = [r \in R |-> <<>>]
@@ -201,13 +200,11 @@ HighestCommitQC(l) ==
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].commitQC)
 
 \* Given a log l, returns the index of the highest log entry with a auditQC, 0 if the log contains no auditQCs
-\* Compare: src/consensus/log.rs#Log
 HighestAuditQC(l) ==
     LET idx == SelectLastInSeq(l, IsAuditQC)
     IN IF idx = 0 THEN 0 ELSE Max(l[idx].auditQC)
 
 \* Given a log l, returns the index of the highest log entry with a auditQC over a auditQC
-\* Compare: src/consensus/log.rs#Log
 HighestQCOverQC(l) ==
     LET lidx == HighestAuditQC(l)
         idx == SelectLastInSubSeq(l, 1, lidx, IsAuditQC)
@@ -268,7 +265,6 @@ WellFormedLog(l) ==
                 \A qj \in l[j].commitQC: qj < q
 
 \* Replica r handling AppendEntries from primary p
-\* Compare: src/consensus/steady_state.rs#do_append_entries
 ReceiveEntries(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
@@ -297,9 +293,7 @@ ReceiveEntries(r, p) ==
     \* the only time a commit index can decrease is on the receipt of a NewView message if there's been a byz attack
     /\ commitIndex' = [commitIndex EXCEPT ![r] = Max2(@, HighestCommitQC(log'[r]))]
     \* assumes that a replica can safely consider a transaction audited if there's a quorum certificate over a quorum certificate
-    \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
     /\ LET bci == HighestQCOverQC(log'[r])
-           \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
            bciFastPath == HighestUnanimity(log'[r], 0, r)
        IN auditIndex' = [auditIndex EXCEPT ![r] = Max({@} \cup {bci} \cup bciFastPath) ]
     /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
@@ -348,7 +342,6 @@ CheckViewStability(p) ==
             prepareQC'[p][q] >= SelectInSeq(log[p], inView)
 
 \* Primary p receiving votes from replica r
-\* Compare: src/consensus/steady_state.rs#do_process_vote
 ReceiveVote(p, r) ==
     \* p must be the primary
     /\ primary[p]
@@ -369,9 +362,7 @@ ReceiveVote(p, r) ==
     /\ IF viewStable'[p] THEN 
             /\ commitIndex' = [commitIndex EXCEPT ![p] = 
                 MaxQuorum(CQ, log[p], prepareQC'[p], @)]
-            \* Compare: src/consensus/commit.rs#maybe_byzantine_commit
             /\ LET bci == HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0)))
-                   \* Compare: src/consensus/commit.rs#maybe_byzantine_commit_by_fast_path
                    bciFastPath == HighestUnanimity(log[p], prepareQC'[p][r], r)
                IN auditIndex' = [auditIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
         ELSE UNCHANGED <<commitIndex, auditIndex>>
@@ -389,7 +380,6 @@ MaxAuditQC(l, m) ==
     ELSE [n |-> {}, v |-> {}]
 
 \* Primary p sends AppendEntries to all replicas
-\* Compare: src/consensus/steady_state.rs#do_append_entries
 SendEntries(p) ==
     \* p must be the primary
     /\ primary[p]
@@ -416,7 +406,6 @@ SendEntries(p) ==
         /\ UNCHANGED <<view, primary, commitIndex, auditIndex, byzActions, viewStable>>
 
 \* Replica r times out
-\* Compare: src/consensus/view_change.rs#do_init_view_change
 Timeout(r) ==
     /\ view' = [view EXCEPT ![r] = view[r] + 1]
     \* send a view change message to the new primary (even if it's itself)
@@ -439,7 +428,6 @@ HighestQCView(l) ==
 
 \* True if log l is valid log choice from the set of logs ls.
 \* Assumes that l \in ls
-\* Compare: src/consensus/view_change.rs#fork_choice_rule_get
 LogChoiceRule(l,ls) ==
     \* if all logs are empty, then any l must be empty and a valid choice  
     \/ \A l2 \in ls: l2 = <<>>
@@ -459,7 +447,6 @@ LogChoiceRule(l,ls) ==
                              /\ Len(l) >= Len(l2)
 
 \* Replica r becomes primary
-\* Compare: src/consensus/view_change.rs#do_init_new_leader
 BecomePrimary(r) ==
     \* replica must be assigned the new view
     /\ r = Primary(view[r])
