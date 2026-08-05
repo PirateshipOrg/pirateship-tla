@@ -27,7 +27,7 @@ ASSUME BR \subseteq R /\ Cardinality(R) >= 3*Cardinality(BR) + 1
 CONSTANT Txs
 ASSUME Txs # {}
 
-\* Maximum number of byzantine actions across all replicas
+\* Maximum number of Byzantine actions across all replicas
 \* This parameter is completely artificial and is used to limit the state space
 CONSTANT MaxByzActions
 
@@ -49,7 +49,7 @@ VARIABLE
     commitIndex,
     \* audit index of each replica
     auditIndex,
-    \* total number of byzantine actions taken so far by any byzantine replica
+    \* total number of Byzantine actions taken so far by any Byzantine replica
     byzActions,
     \* (primary only) flag indicating if the primary has stabilized the view
     viewStable
@@ -95,7 +95,7 @@ Primary(v) ==
 \* Quorum certificates do not need views as they are always formed in the current view
 \* Note that in the specification, we do not model signatures anywhere. 
 \* This means that signatures are omitted from the logs and messages. 
-\* When modelling byzantine faults, byz replicas will not be permitted to form 
+\* When modelling Byzantine faults, byz replicas will not be permitted to form
 \* messages which would be discarded by honest replicas.
 QC == Nat
 
@@ -334,7 +334,7 @@ ReceiveNewView(r, p) ==
     /\ UNCHANGED <<byzActions, auditIndex>>
 
 \* True iff primary p is in a stable view
-\* A view is stable when a audit quorum have the view's first log entry
+\* A view is stable when an audit quorum has the view's first log entry
 CheckViewStability(p) ==
     LET inView(e) == e.view=view[p] IN
     \E Q \in AQ: 
@@ -450,7 +450,7 @@ LogChoiceRule(l,ls) ==
 BecomePrimary(r) ==
     \* replica must be assigned the new view
     /\ r = Primary(view[r])
-    \* a audit quorum must have voted for the replica
+    \* an audit quorum must have voted for the replica
     /\ \E q \in AQ:
         /\ \A n \in q: 
             /\ network[r][n] # <<>>
@@ -497,10 +497,10 @@ DiscardMessages ==
 
 ----
 \* BYZANTINE ACTIONS
-\* Byzantine actions can only be taken by byzantine replicas (BR) and if there are byzantine actions left to take
+\* Byzantine actions can only be taken by Byzantine replicas (BR) and if there are Byzantine actions left to take
 
-\* A byzantine replica might vote for an entry without actually appending it to its log.
-\* This byzantine action currently has the same preconditions as AppendEntries
+\* A Byzantine replica might vote for an entry without actually appending it to its log.
+\* This Byzantine action currently has the same preconditions as AppendEntries
 ByzOmitEntries(r, p) ==
     /\ r \in BR
     /\ byzActions < MaxByzActions
@@ -533,7 +533,7 @@ ModifyAppendEntries(m) == [
 ]
 
 
-\* We allow a byzantine primary to equivocate by changing the txn in an AppendEntries message
+\* We allow a Byzantine primary to equivocate by changing the txn in an AppendEntries message
 ByzPrimaryEquivocate(p) ==
     /\ p \in BR
     /\ byzActions < MaxByzActions
@@ -547,7 +547,7 @@ ByzPrimaryEquivocate(p) ==
     /\ UNCHANGED <<view, log, primary, prepareQC, commitIndex, auditIndex, viewStable>>
 
 \* Next state relation
-\* Note that the byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
+\* Note that the Byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
 Next == 
     \/ DiscardMessages
     \/ \E r \in BR:
@@ -572,7 +572,7 @@ Fairness ==
     /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
     /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
     /\ \A r,s \in HR: WF_vars(ReceiveNewView(r,s))
-    \* Omit any byzantine actions from the fairness condition.
+    \* Omit any Byzantine actions from the fairness condition.
 
 Spec == 
     /\ Init
@@ -582,7 +582,7 @@ Spec ==
 ----
 \* PROPERTIES
 
-\* Correct replicas are either honest or byzantine when no byzantine actions have been taken yet
+\* Correct replicas are either honest or Byzantine when no Byzantine actions have been taken yet
 CR == IF byzActions = 0 THEN R ELSE HR
 
 Committed(r) ==
@@ -617,9 +617,9 @@ IsPrefixWithoutEmpty(p, l) ==
           \/ p[k] = l[k]
           \/ p[k].tx = <<>>
 
-\* If no byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
+\* If no Byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
 \* This, together with CommittedLogAppendOnlyProp, is the classic CFT safety property
-\* Note that if any nodes have been byzantine, then this property is not guaranteed to hold on any node
+\* Note that if any nodes have been Byzantine, then this property is not guaranteed to hold on any node
 \* LogInv implies that the audited logs of replicas are prefixes too, 
 \* as IndexBoundsInv ensures that the auditIndex is always less than or equal to the commitIndex.
 LogInv ==
@@ -632,13 +632,13 @@ Audited(r) ==
     SubSeq(log[r], 1, auditIndex[r])
 
 \* Variant of LogInv for the audit index and correct replicas only
-\* We make no assertions about the state of byzantine replicas
+\* We make no assertions about the state of Byzantine replicas
 AuditLogInv ==
     \A i, j \in CR :
         \/ IsPrefix(Audited(i),Audited(j)) 
         \/ IsPrefix(Audited(j),Audited(i))
 
-\* If no byzantine actions have been taken, then each replica only appends to its committed log
+\* If no Byzantine actions have been taken, then each replica only appends to its committed log
 \* Note that this invariant allows empty blocks (sent at the start of a view) to be rolled back
 CommittedLogAppendOnlyProp ==
     [][byzActions = 0 => 
@@ -646,7 +646,7 @@ CommittedLogAppendOnlyProp ==
         IsPrefixWithoutEmpty(Committed(i), Committed(i)')]_vars
 
 \* All correct replicas only append to their audited logs
-MonotonicAuditedIndexdProp ==
+MonotonicAuditedIndexProp ==
     [][\A i \in CR :
         auditIndex[i] <= auditIndex'[i]]_vars
 
