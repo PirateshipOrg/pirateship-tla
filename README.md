@@ -1,8 +1,9 @@
 # PirateShip TLA+
 
-A TLA+ specification of the PirateShip consensus protocol. The model covers
-normal operation, view changes, Byzantine behavior, and crash faults, with
-safety properties checked by TLC.
+A TLA+ specification of the
+[PirateShip consensus protocol](https://github.com/PirateshipOrg/pirateship).
+The model covers normal operation, view changes, Byzantine behavior, and crash
+faults, with safety properties checked by TLC.
 
 ## Repository layout
 
