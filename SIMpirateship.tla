@@ -36,10 +36,10 @@ StatsHighestUnanimity(l, i, r) ==
     \* Transitive fast path, i.e., combined votes from all applicable QCs.
     ELSE HighestUnanimity(l, i, r)
 
-StatsCollect(r, bci) ==
+StatsCollect(r, AuditIndex) ==
     TLCGetAndSet(StatsFastPath, 
             LAMBDA old, val: [ sum |-> old.sum + val, obs |-> old.obs + 1 ], 
-            auditIndex'[r] - Max2(auditIndex[r], bci), 
+            auditIndex'[r] - Max2(auditIndex[r], AuditIndex),
             [sum |-> 0, obs |-> 0]
     ) \in [sum : Nat, obs : Nat] \* Always evaluate/equal to TRUE.
 

@@ -1,6 +1,5 @@
 ---- MODULE pirateship ----
 \* This is a TLA+ specification of the PirateShip consensus protocol.
-\* For simplicity of the specification, message delivery is assumed to be ordered and reliable.
 \* Likewise, we also assume all transactions are signed.
 
 EXTENDS 
@@ -46,6 +45,8 @@ CONSTANT MaxByzActions
 \* VARIABLES
 
 VARIABLE
+    \* To reduce the state space, pairwise message delivery is modeled as ordered
+    \* and reliable; no bound is placed on delivery time.
     \* messages in transit between any pair of replicas
     network,
     \* current view of each replica
@@ -305,9 +306,9 @@ ReceiveEntries(r, p) ==
     \* the only time a commit index can decrease is on the receipt of a NewView message if there's been a byz attack
     /\ commitIndex' = [commitIndex EXCEPT ![r] = Max2(@, HighestCommitQC(log'[r]))]
     \* assumes that a replica can safely consider a transaction audited if there's a quorum certificate over a quorum certificate
-    /\ LET bci == HighestQCOverQC(log'[r])
-           bciFastPath == HighestUnanimity(log'[r], 0, r)
-       IN auditIndex' = [auditIndex EXCEPT ![r] = Max({@} \cup {bci} \cup bciFastPath) ]
+    /\ LET AuditIndex == HighestQCOverQC(log'[r])
+           fastAuditIndexes == HighestUnanimity(log'[r], 0, r)
+       IN auditIndex' = [auditIndex EXCEPT ![r] = Max({@} \cup {AuditIndex} \cup fastAuditIndexes) ]
     /\ UNCHANGED <<leader, view, prepareQC, byzActions, viewStable>>
 
 \* Replica r handling NewView from leader p
@@ -376,9 +377,9 @@ ReceiveVote(p, r) ==
     /\ IF viewStable'[p] THEN 
             /\ commitIndex' = [commitIndex EXCEPT ![p] = 
                 MaxQuorum(CQ, log[p], prepareQC'[p], @)]
-            /\ LET bci == HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0)))
-                   bciFastPath == HighestUnanimity(log[p], prepareQC'[p][r], r)
-               IN auditIndex' = [auditIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
+            /\ LET AuditIndex == HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0)))
+                   fastAuditIndexes == HighestUnanimity(log[p], prepareQC'[p][r], r)
+               IN auditIndex' = [auditIndex EXCEPT ![p] = Max({@} \cup fastAuditIndexes \cup {AuditIndex}) ]
         ELSE UNCHANGED <<commitIndex, auditIndex>>
     /\ UNCHANGED <<view, log, leader, byzActions>>
 
