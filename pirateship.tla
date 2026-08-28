@@ -305,6 +305,8 @@ ReceiveNewView(r, p) ==
     /\ network[r][p] # <<>>
     \* and the next message is a NewView
     /\ Head(network[r][p]).type = "NewView"
+    \* and the message must be from the designated primary
+    /\ p = Primary(Head(network[r][p]).view)
     \* the replica must be in the same view or lower
     /\ view[r] \leq Head(network[r][p]).view
     \* received log must be well formed
