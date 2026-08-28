@@ -1,6 +1,5 @@
 ---- MODULE pirateship ----
 \* This is a TLA+ specification of the PirateShip consensus protocol.
-\* Likewise, we also assume all transactions are signed.
 
 EXTENDS 
     \* TLA+ standard modules
@@ -113,6 +112,7 @@ Leader(v) ==
 QC == Nat
 
 \* Each log entry contains a view, a txn and optionally, quorum certificates for commitment and auditing
+\* We assume all transactions are signed.
 LogEntry == [
     view: Views, 
     tx: Seq(Txs),
