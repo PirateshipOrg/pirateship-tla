@@ -19,9 +19,20 @@ EXTENDS
 CONSTANT R
 ASSUME R # {}
 
+\* Maximum number of unavailable replicas
+CONSTANT u
+ASSUME u \in Nat /\ u < Cardinality(R)
+
+\* Maximum number of Byzantine replicas tolerated for safety
+CONSTANT fsafe
+ASSUME fsafe \in Nat
+
 \* Set of all Byzantine replicas
 CONSTANT BR
-ASSUME BR \subseteq R /\ Cardinality(R) >= 3*Cardinality(BR) + 1
+ASSUME BR \subseteq R /\ Cardinality(BR) <= fsafe
+
+\* PFT replication requirement
+ASSUME Cardinality(R) >= 2*u + fsafe + 1
 
 \* Set of all possible transactions
 CONSTANT Txs
@@ -76,8 +87,8 @@ N == Cardinality(R)
 \* Set of quorums for commitment (simple majority).
 CQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 2)}
 
-\* Set of quorums for auditing (super majority).
-AQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 3)}
+\* Set of quorums for auditing (all but u replicas).
+AQ == {q \in SUBSET R: Cardinality(q) >= N - u}
 
 \* Set of honest replicas
 HR == R \ BR
