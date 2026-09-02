@@ -11,8 +11,8 @@ TLCInit ==
        /\ network = [r \in R |-> [s \in R |-> <<>>]]
        /\ auditIndex = [r \in R |-> 2]
        /\ \E p \in R:
-             /\ primary = [ r \in R |-> r = p ]
-             /\ viewStable = primary \* Identical to primary at startup.
+             /\ leader = [ r \in R |-> r = p ]
+             /\ viewStable = leader \* Identical to leader at startup.
              /\ log = [r \in R |-> 
                     <<[view |-> 0, tx |-> <<1>>, auditQC |-> {},  auditQCVotes |-> {},  commitQC |-> {}],
                       [view |-> 0, tx |-> <<1>>, auditQC |-> {},  auditQCVotes |-> {},  commitQC |-> {}],

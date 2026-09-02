@@ -3,9 +3,9 @@ EXTENDS TLCpirateship, TLC, TLCExt, IOUtils
 
 SIMTimeout(r) ==
     /\ \/ 1 = RandomElement(1..((TLCGet("duration") % 300)+1)) \* Adjust probability of timeouts as a function of the duration of the simulation.
-       \* There is no primary in the highest view.
+       \* There is no leader in the highest view.
        \/ LET S == { s \in R : view[s] = Max(Range(view))} 
-          IN TRUE \notin Range([ s \in S |-> primary[s] ])
+          IN TRUE \notin Range([ s \in S |-> leader[s] ])
     /\ PS!Timeout(r)
 
 -----
@@ -36,10 +36,10 @@ StatsHighestUnanimity(l, i, r) ==
     \* Transitive fast path, i.e., combined votes from all applicable QCs.
     ELSE HighestUnanimity(l, i, r)
 
-StatsCollect(r, bci) ==
+StatsCollect(r, AuditIndex) ==
     TLCGetAndSet(StatsFastPath, 
             LAMBDA old, val: [ sum |-> old.sum + val, obs |-> old.obs + 1 ], 
-            auditIndex'[r] - Max2(auditIndex[r], bci), 
+            auditIndex'[r] - Max2(auditIndex[r], AuditIndex),
             [sum |-> 0, obs |-> 0]
     ) \in [sum : Nat, obs : Nat] \* Always evaluate/equal to TRUE.
 

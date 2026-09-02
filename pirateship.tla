@@ -1,7 +1,5 @@
 ---- MODULE pirateship ----
 \* This is a TLA+ specification of the PirateShip consensus protocol.
-\* For simplicity of the specification, message delivery is assumed to be ordered and reliable.
-\* Likewise, we also assume all transactions are signed.
 
 EXTENDS 
     \* TLA+ standard modules
@@ -19,9 +17,20 @@ EXTENDS
 CONSTANT R
 ASSUME R # {}
 
+\* Maximum number of unavailable replicas
+CONSTANT u
+ASSUME u \in Nat /\ u < Cardinality(R)
+
+\* Maximum number of Byzantine replicas tolerated for safety
+CONSTANT fsafe
+ASSUME fsafe \in Nat
+
 \* Set of all Byzantine replicas
 CONSTANT BR
-ASSUME BR \subseteq R /\ Cardinality(R) >= 3*Cardinality(BR) + 1
+ASSUME BR \subseteq R /\ Cardinality(BR) <= fsafe
+
+\* PFT replication requirement
+ASSUME Cardinality(R) >= 2*u + fsafe + 1
 
 \* Set of all possible transactions
 CONSTANT Txs
@@ -35,15 +44,17 @@ CONSTANT MaxByzActions
 \* VARIABLES
 
 VARIABLE
+    \* To reduce the state space, pairwise message delivery is modeled as ordered
+    \* and reliable; no bound is placed on delivery time.
     \* messages in transit between any pair of replicas
     network,
     \* current view of each replica
     view,
     \* current log of each replica
     log,
-    \* flag indicating if each replica is a primary
-    primary,
-    \* (primary only) the highest log entry on each replica replicated in this view
+    \* flag indicating if each replica is a leader
+    leader,
+    \* (leader only) the highest log entry on each replica replicated in this view
     prepareQC,
     \* commit index of each replica
     commitIndex,
@@ -51,7 +62,7 @@ VARIABLE
     auditIndex,
     \* total number of Byzantine actions taken so far by any Byzantine replica
     byzActions,
-    \* (primary only) flag indicating if the primary has stabilized the view
+    \* (leader only) flag indicating if the leader has stabilized the view
     viewStable
 
 \* Sequence of all variables
@@ -59,7 +70,7 @@ vars == <<
     network,
     view,  
     log, 
-    primary, 
+    leader,
     prepareQC,
     commitIndex,
     auditIndex,
@@ -70,13 +81,14 @@ vars == <<
 \* HELPERS & VARIABLE TYPES
 
 \* Number of replicas
+\* For simplicity, we reason directly about replicas.
 N == Cardinality(R)
 
 \* Set of quorums for commitment (simple majority).
 CQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 2)}
 
-\* Set of quorums for auditing (super majority).
-AQ == {q \in SUBSET R: Cardinality(q) >= N - ((N-1) \div 3)}
+\* Set of quorums for auditing (all but u replicas).
+AQ == {q \in SUBSET R: Cardinality(q) >= N - u}
 
 \* Set of honest replicas
 HR == R \ BR
@@ -87,8 +99,8 @@ Views ==  Nat
 ReplicaSeq ==
     CHOOSE s \in [ 1..N -> R ]: Range(s) = R
 
-\* The primary of view v
-Primary(v) ==
+\* The leader of view v
+Leader(v) ==
     ReplicaSeq[(v % N) + 1]
 
 \* Quorum certificates (QCs) are simply the index of the log entry they confirm
@@ -100,6 +112,7 @@ Primary(v) ==
 QC == Nat
 
 \* Each log entry contains a view, a txn and optionally, quorum certificates for commitment and auditing
+\* We assume all transactions are signed.
 LogEntry == [
     view: Views, 
     tx: Seq(Txs),
@@ -164,7 +177,7 @@ TypeOK ==
     /\ view \in [R -> Views]
     /\ LogTypeOK
     /\ NetworkTypeOK
-    /\ primary \in [R -> BOOLEAN]
+    /\ leader \in [R -> BOOLEAN]
     /\ prepareQC \in [R -> [R -> Nat]]
     /\ commitIndex \in [R -> Nat]
     /\ auditIndex \in [R -> Nat]
@@ -173,17 +186,17 @@ TypeOK ==
 ----
 \* INITIAL STATES
 
-\* We begin in view 0 with a non-deterministically chosen replica as primary.
+\* We begin in view 0 with a non-deterministically chosen replica as leader.
 Init == 
     /\ view = [r \in R |-> 0]
     /\ network = [r \in R |-> [s \in R |-> <<>>]]
     /\ log = [r \in R |-> <<>>]
-    /\ primary \in { f \in [ R -> BOOLEAN ] : Cardinality({ r \in R : f[r] }) = 1 }
+    /\ leader \in { f \in [ R -> BOOLEAN ] : Cardinality({ r \in R : f[r] }) = 1 }
     /\ prepareQC = [r \in R |-> [s \in R |-> 0]]
     /\ commitIndex = [r \in R |-> 0]
     /\ auditIndex = [r \in R |-> 0]
     /\ byzActions = 0
-    /\ viewStable = primary
+    /\ viewStable = leader
 
 ----
 \* ACTIONS
@@ -264,7 +277,7 @@ WellFormedLog(l) ==
             /\ \A j \in 1..i-1 : 
                 \A qj \in l[j].commitQC: qj < q
 
-\* Replica r handling AppendEntries from primary p
+\* Replica r handling AppendEntries from leader p
 ReceiveEntries(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
@@ -293,29 +306,29 @@ ReceiveEntries(r, p) ==
     \* the only time a commit index can decrease is on the receipt of a NewView message if there's been a byz attack
     /\ commitIndex' = [commitIndex EXCEPT ![r] = Max2(@, HighestCommitQC(log'[r]))]
     \* assumes that a replica can safely consider a transaction audited if there's a quorum certificate over a quorum certificate
-    /\ LET bci == HighestQCOverQC(log'[r])
-           bciFastPath == HighestUnanimity(log'[r], 0, r)
-       IN auditIndex' = [auditIndex EXCEPT ![r] = Max({@} \cup {bci} \cup bciFastPath) ]
-    /\ UNCHANGED <<primary, view, prepareQC, byzActions, viewStable>>
+    /\ LET AuditIndex == HighestQCOverQC(log'[r])
+           fastAuditIndexes == HighestUnanimity(log'[r], 0, r)
+       IN auditIndex' = [auditIndex EXCEPT ![r] = Max({@} \cup {AuditIndex} \cup fastAuditIndexes) ]
+    /\ UNCHANGED <<leader, view, prepareQC, byzActions, viewStable>>
 
-\* Replica r handling NewView from primary p
+\* Replica r handling NewView from leader p
 \* Note that unlike an AppendEntries message, a replica can update its view upon receiving a NewView message
 ReceiveNewView(r, p) ==
     \* there must be at least one message pending
     /\ network[r][p] # <<>>
     \* and the next message is a NewView
     /\ Head(network[r][p]).type = "NewView"
-    \* and the message must be from the designated primary
-    /\ p = Primary(Head(network[r][p]).view)
+    \* and the message must be from the designated leader
+    /\ p = Leader(Head(network[r][p]).view)
     \* the replica must be in the same view or lower
     /\ view[r] \leq Head(network[r][p]).view
     \* received log must be well formed
     /\ WellFormedLog(Head(network[r][p]).log)
     \* update the replica's local view
-    \* note that we do not dispatch a view change message as a primary has already been elected
+    \* note that we do not dispatch a view change message as a leader has already been elected
     /\ view' = [view EXCEPT ![r] = Head(network[r][p]).view]
-    \* step down if replica was a primary
-    /\ primary' = [primary EXCEPT ![r] = FALSE]
+    \* step down if replica was a leader
+    /\ leader' = [leader EXCEPT ![r] = FALSE]
     /\ viewStable' = [viewStable EXCEPT ![r] = FALSE]
     \* reset prepareQCs, in case view was updated
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
@@ -335,7 +348,7 @@ ReceiveNewView(r, p) ==
     /\ commitIndex' = [commitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
     /\ UNCHANGED <<byzActions, auditIndex>>
 
-\* True iff primary p is in a stable view
+\* True iff leader p is in a stable view
 \* A view is stable when an audit quorum has the view's first log entry
 CheckViewStability(p) ==
     LET inView(e) == e.view=view[p] IN
@@ -343,10 +356,10 @@ CheckViewStability(p) ==
         \A q \in Q: 
             prepareQC'[p][q] >= SelectInSeq(log[p], inView)
 
-\* Primary p receiving votes from replica r
+\* Leader p receiving votes from replica r
 ReceiveVote(p, r) ==
-    \* p must be the primary
-    /\ primary[p]
+    \* p must be the leader
+    /\ leader[p]
     \* and the next message is a vote from the correct view
     /\ network[p][r] # <<>>
     /\ Head(network[p][r]).type = "Vote"
@@ -360,15 +373,15 @@ ReceiveVote(p, r) ==
     \* if view is not already stable, check if it is now
     /\ viewStable' = [viewStable EXCEPT ![p] = 
             IF @ THEN @ ELSE CheckViewStability(p)]
-    \* If view is stable, then the primary can update its commit indexes
+    \* If view is stable, then the leader can update its commit indexes
     /\ IF viewStable'[p] THEN 
             /\ commitIndex' = [commitIndex EXCEPT ![p] = 
                 MaxQuorum(CQ, log[p], prepareQC'[p], @)]
-            /\ LET bci == HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0)))
-                   bciFastPath == HighestUnanimity(log[p], prepareQC'[p][r], r)
-               IN auditIndex' = [auditIndex EXCEPT ![p] = Max({@} \cup bciFastPath \cup {bci}) ]
+            /\ LET AuditIndex == HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0)))
+                   fastAuditIndexes == HighestUnanimity(log[p], prepareQC'[p][r], r)
+               IN auditIndex' = [auditIndex EXCEPT ![p] = Max({@} \cup fastAuditIndexes \cup {AuditIndex}) ]
         ELSE UNCHANGED <<commitIndex, auditIndex>>
-    /\ UNCHANGED <<view, log, primary, byzActions>>
+    /\ UNCHANGED <<view, log, leader, byzActions>>
 
 MaxCommitQC(l,p) ==
     IF commitIndex[p] > HighestCommitQC(l)
@@ -381,14 +394,14 @@ MaxAuditQC(l, m) ==
     THEN [n |-> {idx}, v |-> {r \in DOMAIN m : m[r] >= idx}]
     ELSE [n |-> {}, v |-> {}]
 
-\* Primary p sends AppendEntries to all replicas
+\* Leader p sends AppendEntries to all replicas
 SendEntries(p) ==
-    \* p must be the primary
-    /\ primary[p]
+    \* p must be the leader
+    /\ leader[p]
     \* and view must be stable
     /\ viewStable[p]
     /\ \E tx \in Txs:
-        \* primary will not send an appendEntries to itself so update prepareQC here
+        \* leader will not send an appendEntries to itself so update prepareQC here
         /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
         \* add the new entry to the log
         /\ LET qc == MaxAuditQC(log[p], prepareQC'[p]) IN
@@ -405,21 +418,21 @@ SendEntries(p) ==
                     type |-> "AppendEntries",
                     view |-> view[p],
                     log |-> log'[p]])]]
-        /\ UNCHANGED <<view, primary, commitIndex, auditIndex, byzActions, viewStable>>
+        /\ UNCHANGED <<view, leader, commitIndex, auditIndex, byzActions, viewStable>>
 
 \* Replica r times out
 Timeout(r) ==
     /\ view' = [view EXCEPT ![r] = view[r] + 1]
-    \* send a view change message to the new primary (even if it's itself)
-    /\ network' = [network EXCEPT ![Primary(view'[r])][r] = Append(@, [ 
+    \* send a view change message to the new leader (even if it's itself)
+    /\ network' = [network EXCEPT ![Leader(view'[r])][r] = Append(@, [
         type |-> "ViewChange",
         view |-> view'[r],
         log |-> log[r]])
         ]
-    \* step down if replica was a primary
-    /\ primary' = [primary EXCEPT ![r] = FALSE]
+    \* step down if replica was a leader
+    /\ leader' = [leader EXCEPT ![r] = FALSE]
     /\ viewStable' = [viewStable EXCEPT ![r] = FALSE]
-    \* reset prepareQCs, these are not used until the node is elected primary
+    \* reset prepareQCs, these are not used until the node is elected leader
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<log, commitIndex, auditIndex, byzActions>>
 
@@ -448,10 +461,10 @@ LogChoiceRule(l,ls) ==
                           \/ /\ Last(l).view = Last(l2).view 
                              /\ Len(l) >= Len(l2)
 
-\* Replica r becomes primary
-BecomePrimary(r) ==
+\* Replica r becomes leader
+BecomeLeader(r) ==
     \* replica must be assigned the new view
-    /\ r = Primary(view[r])
+    /\ r = Leader(view[r])
     \* an audit quorum must have voted for the replica
     /\ \E q \in AQ:
         /\ \A n \in q: 
@@ -461,7 +474,7 @@ BecomePrimary(r) ==
         /\ \E l1 \in {Head(network[r][n]).log : n \in q}:
             \* Non-deterministically pick a log from the set of logs in the quorum that satisfy the log choice rule.
             /\ LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
-            \* Primary adopts chosen log and adds a new entry in the new view
+            \* Leader adopts chosen log and adds a new entry in the new view
             /\ log' = [log EXCEPT ![r] = Append(l1, [
                 view |-> view[r],
                 tx |-> <<>>,
@@ -479,9 +492,9 @@ BecomePrimary(r) ==
                     view |-> view[r],
                     log |-> log'[r]])
                 ELSE network[r1][r2]]]
-    \* replica becomes a primary
-    /\ primary' = [primary EXCEPT ![r] = TRUE]
-    \* primary updates its commit indexes
+    \* replica becomes a leader
+    /\ leader' = [leader EXCEPT ![r] = TRUE]
+    \* leader updates its commit indexes
     \* Commit index may be decreased if there's been an byz attack
     /\ commitIndex' = [commitIndex EXCEPT 
         ![r] = Max2(Min2(@, Len(log'[r])), HighestCommitQC(log'[r]))]
@@ -494,8 +507,8 @@ DiscardMessages ==
     /\ \E s,r \in R:
             network' = [network EXCEPT ![r][s] = SelectSeq(@, 
                 LAMBDA m: ~(m.view < view[r] \/ 
-                    (m.view = view[r] /\ m.type = "ViewChange" /\ primary[r])))]
-    /\ UNCHANGED <<view, log, primary, prepareQC, commitIndex, auditIndex, byzActions, viewStable>>
+                    (m.view = view[r] /\ m.type = "ViewChange" /\ leader[r])))]
+    /\ UNCHANGED <<view, log, leader, prepareQC, commitIndex, auditIndex, byzActions, viewStable>>
 
 ----
 \* BYZANTINE ACTIONS
@@ -524,7 +537,7 @@ ByzOmitEntries(r, p) ==
             log |-> Head(network[r][p]).log
             ])
         ]
-    /\ UNCHANGED <<primary, view, prepareQC, commitIndex, auditIndex, log, viewStable>>
+    /\ UNCHANGED <<leader, view, prepareQC, commitIndex, auditIndex, log, viewStable>>
 
 \* Given an append entries message, returns the same message with the txn changed to 1
 ModifyAppendEntries(m) == [
@@ -535,8 +548,8 @@ ModifyAppendEntries(m) == [
 ]
 
 
-\* We allow a Byzantine primary to equivocate by changing the txn in an AppendEntries message
-ByzPrimaryEquivocate(p) ==
+\* We allow a Byzantine leader to equivocate by changing the txn in an AppendEntries message
+ByzLeaderEquivocate(p) ==
     /\ p \in BR
     /\ byzActions < MaxByzActions
     /\ byzActions' = byzActions + 1
@@ -546,30 +559,30 @@ ByzPrimaryEquivocate(p) ==
         /\ Head(network[r][p]).log # <<>>
         /\ network' = [network EXCEPT 
             ![r][p][1] = ModifyAppendEntries(@)]
-    /\ UNCHANGED <<view, log, primary, prepareQC, commitIndex, auditIndex, viewStable>>
+    /\ UNCHANGED <<view, log, leader, prepareQC, commitIndex, auditIndex, viewStable>>
 
 \* Next state relation
 \* Note that the Byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
 Next == 
     \/ DiscardMessages
     \/ \E r \in BR:
-        \/ ByzPrimaryEquivocate(r)
+        \/ ByzLeaderEquivocate(r)
         \/ \E s \in R: \* Could be CR because we don't need byz replicas to receive messages from other byz replicas
             ByzOmitEntries(r,s)
     \/ \E r \in R: 
         \/ SendEntries(r)
         \/ Timeout(r)
-        \/ BecomePrimary(r)
+        \/ BecomeLeader(r)
         \/ \E s \in R: 
             \/ ReceiveEntries(r,s)
             \/ ReceiveVote(r,s)
             \/ ReceiveNewView(r,s)
 
 Fairness ==
-    \* Only Timeout if there is no primary.
+    \* Only Timeout if there is no leader.
     /\ WF_vars(DiscardMessages)
-    /\ \A r \in HR: WF_vars(TRUE \notin Range(primary) /\ Timeout(r))
-    /\ \A r \in HR: WF_vars(BecomePrimary(r))
+    /\ \A r \in HR: WF_vars(TRUE \notin Range(leader) /\ Timeout(r))
+    /\ \A r \in HR: WF_vars(BecomeLeader(r))
     /\ \A r \in HR: WF_vars(SendEntries(r))
     /\ \A r,s \in HR: WF_vars(ReceiveEntries(r,s))
     /\ \A r,s \in HR: WF_vars(ReceiveVote(r,s))
@@ -657,11 +670,11 @@ AuditedLogAppendOnlyProp ==
     [][\A i \in CR :
         IsPrefix(Audited(i), Audited(i)')]_vars
 
-\* At most one correct replica is primary in a view
-OneLeaderPerTermInv ==
+\* At most one correct replica is leader in a view
+OneLeaderPerViewInv ==
     \A v \in 0..Max(Range(view)), r \in CR :
-        view[r] = v /\ primary[r] 
-        => \A s \in R \ {r} : view[s] = v => ~primary[s]
+        view[r] = v /\ leader[r]
+        => \A s \in R \ {r} : view[s] = v => ~leader[s]
 
 \* The commit and audit indexes are within bounds
 \* The audit index is always less than or equal to the commit index
