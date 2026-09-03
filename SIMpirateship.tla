@@ -45,11 +45,11 @@ StatsCollect(r, AuditIndex) ==
 
 StatsReceiveVote(p, r) ==
     /\ ReceiveVote(p, r)
-    /\ StatsCollect(p, HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0))))
+    /\ StatsCollect(p, HighestAuditQC(SubSeq(branch[p], 1, MaxQuorum(AQ, branch[p], prepareQC'[p], 0))))
 
 StatsReceiveEntries(r, p) ==
     /\ ReceiveEntries(r, p)
-    /\ StatsCollect(r, HighestQCOverQC(log'[r]))
+    /\ StatsCollect(r, HighestQCOverQC(branch'[r]))
 
 StatsPostcondition ==
     /\ PrintT(<<"FastPath", TLCGet(2)>>)

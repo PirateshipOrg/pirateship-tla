@@ -13,13 +13,13 @@ TLCInit ==
        /\ \E p \in R:
              /\ leader = [ r \in R |-> r = p ]
              /\ viewStable = leader \* Identical to leader at startup.
-             /\ log = [r \in R |-> 
+             /\ branch = [r \in R |->
                     <<[view |-> 0, tx |-> <<1>>, auditQC |-> {},  auditQCVotes |-> {},  commitQC |-> {}],
                       [view |-> 0, tx |-> <<1>>, auditQC |-> {},  auditQCVotes |-> {},  commitQC |-> {}],
                       [view |-> 0, tx |-> <<1>>, auditQC |-> {1}, auditQCVotes |-> R,  commitQC |-> {1}],
                       [view |-> 0, tx |-> <<1>>, auditQC |-> {2}, auditQCVotes |-> R,  commitQC |-> {2}]>>]
-             /\ prepareQC = [r \in R |-> [s \in R |-> IF r = p THEN Len(log[r]) ELSE 0]]
-             /\ commitIndex = [r \in R |-> Len(log[r])]
+             /\ prepareQC = [r \in R |-> [s \in R |-> IF r = p THEN Len(branch[r]) ELSE 0]]
+             /\ commitIndex = [r \in R |-> Len(branch[r])]
 
 -----
 
