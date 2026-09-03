@@ -163,8 +163,8 @@ Messages ==
 
 BranchTypeOK ==
     /\ branch \in [R -> Branch]
-    /\ \A l \in Range(branch):
-        \A i \in DOMAIN l: l[i].auditQC = {} <=> l[i].auditQCVotes = {}
+    /\ \A b \in Range(branch):
+        \A i \in DOMAIN b: b[i].auditQC = {} <=> b[i].auditQCVotes = {}
 
 NetworkTypeOK ==
     \A r, s \in R:
@@ -201,29 +201,29 @@ Init ==
 ----
 \* ACTIONS
 
-IsAuditQC(e) ==
-    e.auditQC # {}
+IsAuditQC(batch) ==
+    batch.auditQC # {}
 
-IsCommitQC(e) ==
-    e.commitQC # {}
+IsCommitQC(batch) ==
+    batch.commitQC # {}
 
-\* Given a branch l, returns the index of the highest batch with a commitQC, 0 if the branch contains no commitQCs
-HighestCommitQC(l) ==
-    LET idx == SelectLastInSeq(l, IsCommitQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].commitQC)
+\* Given a branch b, returns the index of the highest batch with a commitQC, 0 if the branch contains no commitQCs
+HighestCommitQC(b) ==
+    LET idx == SelectLastInSeq(b, IsCommitQC)
+    IN IF idx = 0 THEN 0 ELSE Max(b[idx].commitQC)
 
-\* Given a branch l, returns the index of the highest batch with a auditQC, 0 if the branch contains no auditQCs
-HighestAuditQC(l) ==
-    LET idx == SelectLastInSeq(l, IsAuditQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].auditQC)
+\* Given a branch b, returns the index of the highest batch with a auditQC, 0 if the branch contains no auditQCs
+HighestAuditQC(b) ==
+    LET idx == SelectLastInSeq(b, IsAuditQC)
+    IN IF idx = 0 THEN 0 ELSE Max(b[idx].auditQC)
 
-\* Given a branch l, returns the index of the highest batch with a auditQC over a auditQC
-HighestQCOverQC(l) ==
-    LET lidx == HighestAuditQC(l)
-        idx == SelectLastInSubSeq(l, 1, lidx, IsAuditQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].auditQC)
+\* Given a branch b, returns the index of the highest batch with a auditQC over a auditQC
+HighestQCOverQC(b) ==
+    LET auditQCIndex == HighestAuditQC(b)
+        idx == SelectLastInSubSeq(b, 1, auditQCIndex, IsAuditQC)
+    IN IF idx = 0 THEN 0 ELSE Max(b[idx].auditQC)
 
-\* Given a branch l, this operator returns the highest index of a batch for which a *Quorum Certificate* (QC)
+\* Given a branch b, this operator returns the highest index of a batch for which a *Quorum Certificate* (QC)
 \* exists. Note, the index of the batch with the QC corresponds to a higher branch index than the returned
 \* index. This QC is formed by unanimous **auditQCVotes** from replicas.
 \* Since a vote by a replica r for some index n implicitly serves as a vote for all batches at index b and
@@ -231,51 +231,51 @@ HighestQCOverQC(l) ==
 \* have voted for this index transitively by voting for higher indices.
 \* The pair (idx, r) is a vote by replica r for branch index idx. While this vote may not yet be recorded in the
 \* branch, this operator is robust against it.
-HighestUnanimity(l, idx, r) ==
+HighestUnanimity(b, idx, r) ==
     \* Traverse the branch *backwards* and record the replicas that have voted for the current idx or higher
     \* indices (see V).
     LET \* Include r's vote in V of 1..i if r voted for index i.
-        V(S, i) == S \cup l[i].auditQCVotes \cup IF i <= idx THEN {r} ELSE {}
+        V(S, i) == S \cup b[i].auditQCVotes \cup IF i <= idx THEN {r} ELSE {}
         RECURSIVE RUnanimity(_,_)
         RUnanimity(i, S) ==
             IF i = 0 THEN {0}
             ELSE IF V(S, i) = R 
-                 THEN l[i].auditQC
+                 THEN b[i].auditQC
                  ELSE RUnanimity(i-1, V(S, i))
-    IN RUnanimity(Len(l), {})
+    IN RUnanimity(Len(b), {})
 
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
 
-MaxQuorum(Q, l, m, default) == 
+MaxQuorum(Q, b, m, default) ==
     LET RECURSIVE RMaxQuorum(_)
         RMaxQuorum(i) ==
             IF i = default THEN default
             ELSE IF \E q \in Q: \A n \in q: m[n] >= i
                  THEN i ELSE RMaxQuorum(i-1)
-    IN RMaxQuorum(Len(l))
+    IN RMaxQuorum(Len(b))
 
-\* Checks if a branch l is well formed e.g. views are monotonically increasing
-WellFormedBranch(l) ==
-    \A i \in DOMAIN l :
+\* Checks if a branch b is well formed e.g. views are monotonically increasing
+WellFormedBranch(b) ==
+    \A i \in DOMAIN b :
         \* check views are monotonically increasing
-        /\ i > 1 => l[i-1].view <= l[i].view
+        /\ i > 1 => b[i-1].view <= b[i].view
         \* check auditQCs are well formed
-        /\ \A q \in l[i].auditQC :
+        /\ \A q \in b[i].auditQC :
             \* auditQCs are always for previous batches
             /\ q < i
             \* auditQCs are always formed in the current view 
-            /\ l[q].view = l[i].view
+            /\ b[q].view = b[i].view
             \* auditQCs are in increasing order
             /\ \A j \in 1..i-1 : 
-                \A qj \in l[j].auditQC: qj < q
+                \A qj \in b[j].auditQC: qj < q
         \* check commitQCs are well formed
-        /\ \A q \in l[i].commitQC :
+        /\ \A q \in b[i].commitQC :
             \* commitQCs are always for previous batches
             /\ q < i
             \* commitQCs are in increasing order
             /\ \A j \in 1..i-1 : 
-                \A qj \in l[j].commitQC: qj < q
+                \A qj \in b[j].commitQC: qj < q
 
 \* Replica r handling AppendEntries from leader p
 ReceiveEntries(r, p) ==
@@ -351,7 +351,7 @@ ReceiveNewView(r, p) ==
 \* True iff leader p is in a stable view
 \* A view is stable when an audit quorum has the view's first batch
 CheckViewStability(p) ==
-    LET inView(e) == e.view=view[p] IN
+    LET inView(batch) == batch.view=view[p] IN
     \E Q \in AQ: 
         \A q \in Q: 
             prepareQC'[p][q] >= SelectInSeq(branch[p], inView)
@@ -383,14 +383,14 @@ ReceiveVote(p, r) ==
         ELSE UNCHANGED <<commitIndex, auditIndex>>
     /\ UNCHANGED <<view, branch, leader, byzActions>>
 
-MaxCommitQC(l,p) ==
-    IF commitIndex[p] > HighestCommitQC(l)
+MaxCommitQC(b,p) ==
+    IF commitIndex[p] > HighestCommitQC(b)
     THEN {commitIndex[p]}
     ELSE {}
 
-MaxAuditQC(l, m) == 
-    LET idx == MaxQuorum(AQ, l, m, 0) IN
-    IF idx > HighestAuditQC(l)
+MaxAuditQC(b, m) ==
+    LET idx == MaxQuorum(AQ, b, m, 0) IN
+    IF idx > HighestAuditQC(b)
     THEN [n |-> {idx}, v |-> {r \in DOMAIN m : m[r] >= idx}]
     ELSE [n |-> {}, v |-> {}]
 
@@ -436,30 +436,30 @@ Timeout(r) ==
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
     /\ UNCHANGED <<branch, commitIndex, auditIndex, byzActions>>
 
-\* The view of the highest auditQC in branch l, -1 if branch contains no qcs
-HighestQCView(l) == 
-    LET idx == HighestAuditQC(l) IN
-    IF idx = 0 THEN -1 ELSE l[idx].view
+\* The view of the highest auditQC in branch b, -1 if branch contains no qcs
+HighestQCView(b) ==
+    LET idx == HighestAuditQC(b) IN
+    IF idx = 0 THEN -1 ELSE b[idx].view
 
-\* True if branch l is valid branch choice from the set of branches ls.
-\* Assumes that l \in ls
-BranchChoiceRule(l,ls) ==
-    \* if all branches are empty, then any l must be empty and a valid choice
-    \/ \A l2 \in ls: l2 = <<>>
-    \/ /\ l # <<>>
-        \* l is valid if all other branches in ls are empty or l is from a higher view or
-       /\ LET v1 == HighestQCView(l)                     
-          IN \A l2 \in ls:
-                \* l is valid if all other branches in ls are empty or...
-                l # l2 /\ l2 # <<>> 
-                =>  LET v2 == HighestQCView(l2) IN
-                    \* l is from a higher view or...
+\* True if branch b is valid branch choice from the set of branches bs.
+\* Assumes that b \in bs
+BranchChoiceRule(b,bs) ==
+    \* if all branches are empty, then any b must be empty and a valid choice
+    \/ \A b2 \in bs: b2 = <<>>
+    \/ /\ b # <<>>
+        \* b is valid if all other branches in bs are empty or b is from a higher view or
+       /\ LET v1 == HighestQCView(b)
+          IN \A b2 \in bs:
+                \* b is valid if all other branches in bs are empty or...
+                b # b2 /\ b2 # <<>>
+                =>  LET v2 == HighestQCView(b2) IN
+                    \* b is from a higher view or...
                     \/ v1 > v2
-                    \* l is from the same view but at least as long
+                    \* b is from the same view but at least as long
                     \/ /\ v1 = v2
-                       /\ \/ Last(l).view > Last(l2).view
-                          \/ /\ Last(l).view = Last(l2).view 
-                             /\ Len(l) >= Len(l2)
+                       /\ \/ Last(b).view > Last(b2).view
+                          \/ /\ Last(b).view = Last(b2).view
+                             /\ Len(b) >= Len(b2)
 
 \* Replica r becomes leader
 BecomeLeader(r) ==
@@ -471,11 +471,11 @@ BecomeLeader(r) ==
             /\ network[r][n] # <<>>
             /\ Head(network[r][n]).type = "ViewChange"
             /\ view[r] = Head(network[r][n]).view
-        /\ \E l1 \in {Head(network[r][n]).branch : n \in q}:
+        /\ \E b1 \in {Head(network[r][n]).branch : n \in q}:
             \* Non-deterministically pick a branch from the set of branches in the quorum that satisfy the branch choice rule.
-            /\ BranchChoiceRule(l1, {Head(network[r][n]).branch : n \in q})
+            /\ BranchChoiceRule(b1, {Head(network[r][n]).branch : n \in q})
             \* Leader adopts chosen branch and adds a new batch in the new view
-            /\ branch' = [branch EXCEPT ![r] = Append(l1, [
+            /\ branch' = [branch EXCEPT ![r] = Append(b1, [
                 view |-> view[r],
                 tx |-> <<>>,
                 commitQC |-> {},
@@ -618,18 +618,18 @@ ViewStabilizationInv ==
             /\ branch[r][i].tx = <<>> => branch[r][i].view # 0
             /\ i > 1 /\ branch[r][i].view > branch[r][i-1].view => branch[r][i].tx = <<>>
 
-\* Ignoring view stabilization batches (modeled as empty txs), true iff the branch p is a prefix of branch l.
-IsPrefixWithoutEmpty(p, l) ==
-    \* p can be longer than l. Suppose l matches p as a prefix up to index i, but the suffix of p starting
-    \* at i+1 contains only view stabilization batches. By adding the condition Len(p) <= Len(l), we
-    \* ensure that such cases are not considered as p being a prefix of l. Instead, we require that l is at
-    \* least as long as p, ensuring that l has a suffix distinct from p.
-    \* Independently, this condition prevents out-of-bounds access when p is longer than l. For example, if
-    \* l = <<>> (an empty sequence), attempting to access l[k] in the disjunct p[k] = l[k] would lead to an
+\* Ignoring view stabilization batches (modeled as empty txs), true iff the branch p is a prefix of branch b.
+IsPrefixWithoutEmpty(p, b) ==
+    \* p can be longer than b. Suppose b matches p as a prefix up to index i, but the suffix of p starting
+    \* at i+1 contains only view stabilization batches. By adding the condition Len(p) <= Len(b), we
+    \* ensure that such cases are not considered as p being a prefix of b. Instead, we require that b is at
+    \* least as long as p, ensuring that b has a suffix distinct from p.
+    \* Independently, this condition prevents out-of-bounds access when p is longer than b. For example, if
+    \* b = <<>> (an empty sequence), attempting to access b[k] in the disjunct p[k] = b[k] would lead to an
     \* out-of-bounds access.
-    /\ Len(p) <= Len(l)
+    /\ Len(p) <= Len(b)
     /\ \A k \in 1..Len(p):
-          \/ p[k] = l[k]
+          \/ p[k] = b[k]
           \/ p[k].tx = <<>>
 
 \* If no Byzantine actions have been taken, then the committed branches of all replicas must be prefixes of each other
