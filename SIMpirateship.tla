@@ -27,14 +27,14 @@ SIMPeriodic ==
 StatsFastPath ==
     1 + (TLCGet("stats").behavior.id % 3) \* +1 to avoid collision with TLCpirateship!TLCMonitorMagicNumber
 
-StatsHighestUnanimity(l, i, r) ==
+StatsHighestUnanimity(b, i, r) ==
     LET fastPath == StatsFastPath IN
     \* No fast path
     IF fastPath = 1 THEN {0}
     \* Non-transitive fast path, i.e, one unanimous QC.
-    ELSE IF fastPath = 2 THEN LET idx == SelectLastInSeq(l, LAMBDA e: e.auditQCVotes = R) IN IF idx = 0 THEN {0} ELSE l[idx].auditQC
+    ELSE IF fastPath = 2 THEN LET idx == SelectLastInSeq(b, LAMBDA batch: batch.auditQCVotes = R) IN IF idx = 0 THEN {0} ELSE b[idx].auditQC
     \* Transitive fast path, i.e., combined votes from all applicable QCs.
-    ELSE HighestUnanimity(l, i, r)
+    ELSE HighestUnanimity(b, i, r)
 
 StatsCollect(r, AuditIndex) ==
     TLCGetAndSet(StatsFastPath, 
@@ -45,11 +45,11 @@ StatsCollect(r, AuditIndex) ==
 
 StatsReceiveVote(p, r) ==
     /\ ReceiveVote(p, r)
-    /\ StatsCollect(p, HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0))))
+    /\ StatsCollect(p, HighestAuditQC(SubSeq(branch[p], 1, MaxQuorum(AQ, branch[p], prepareQC'[p], 0))))
 
 StatsReceiveEntries(r, p) ==
     /\ ReceiveEntries(r, p)
-    /\ StatsCollect(r, HighestQCOverQC(log'[r]))
+    /\ StatsCollect(r, HighestQCOverQC(branch'[r]))
 
 StatsPostcondition ==
     /\ PrintT(<<"FastPath", TLCGet(2)>>)

@@ -50,11 +50,11 @@ VARIABLE
     network,
     \* current view of each replica
     view,
-    \* current log of each replica
-    log,
+    \* current branch of each replica
+    branch,
     \* flag indicating if each replica is a leader
     leader,
-    \* (leader only) the highest log entry on each replica replicated in this view
+    \* (leader only) the highest batch on each replica replicated in this view
     prepareQC,
     \* commit index of each replica
     commitIndex,
@@ -69,7 +69,7 @@ VARIABLE
 vars == <<
     network,
     view,  
-    log, 
+    branch,
     leader,
     prepareQC,
     commitIndex,
@@ -103,17 +103,17 @@ ReplicaSeq ==
 Leader(v) ==
     ReplicaSeq[(v % N) + 1]
 
-\* Quorum certificates (QCs) are simply the index of the log entry they confirm
+\* Quorum certificates (QCs) are simply the index of the batch they confirm
 \* Quorum certificates do not need views as they are always formed in the current view
 \* Note that in the specification, we do not model signatures anywhere. 
-\* This means that signatures are omitted from the logs and messages. 
+\* This means that signatures are omitted from the branches and messages.
 \* When modelling Byzantine faults, byz replicas will not be permitted to form
 \* messages which would be discarded by honest replicas.
 QC == Nat
 
-\* Each log entry contains a view, a txn and optionally, quorum certificates for commitment and auditing
+\* Each batch contains a view, a txn and optionally, quorum certificates for commitment and auditing
 \* We assume all transactions are signed.
-LogEntry == [
+Batch == [
     view: Views, 
     tx: Seq(Txs),
     \* For convenience, we represent a quorum certificate as a set but it can only be empty or a singleton
@@ -121,38 +121,38 @@ LogEntry == [
     auditQCVotes: AQ \cup {{}}, \* empty set iff auditQC is empty.
     commitQC: SUBSET QC]
 
-\* A log is a sequence of log entries. The index of the log entry is its sequence number/height
-\* We do not explicitly model the parent relationship, the parent of log entry i is log entry i-1
-Log == Seq(LogEntry)
+\* A branch is a sequence of batches. The index of the batch is its sequence number/height
+\* We do not explicitly model the parent relationship, the parent of batch i is batch i-1
+Branch == Seq(Batch)
 
 \* Set of all possible AppendEntries messages
 AppendEntries == [
     type: {"AppendEntries"},
     view: Views,
-    \* In practice, it suffices to send only the log entry to append
-    \* However, for the sake of the spec, we send the entire log as we need to check 
-    \* that the replica has the parent of the log entry to append
-    log: Log]
+    \* In practice, it suffices to send only the batch to append
+    \* However, for the sake of the spec, we send the entire branch as we need to check
+    \* that the replica has the parent of the batch to append
+    branch: Branch]
 
 \* Set of all possible Vote messages
 Votes == [
     type: {"Vote"},
     view: Views,
-    \* As with AppendEntries, we send the entire log for the sake of the spec
-    log: Log]
+    \* As with AppendEntries, we send the entire branch for the sake of the spec
+    branch: Branch]
 
 \* Set of all possible ViewChange messages
 ViewChanges == [
     type: {"ViewChange"},
     view: Views,
-    log: Log]
+    branch: Branch]
 
 \* Set of all possible NewView messages
 \* Currently, we use separate messages for NewView and AppendEntries, these could be merged
 NewViews == [
     type: {"NewView"},
     view: Views,
-    log: Log]
+    branch: Branch]
 
 \* Set of all possible messages
 Messages == 
@@ -161,10 +161,10 @@ Messages ==
     ViewChanges \union 
     NewViews
 
-LogTypeOK ==
-    /\ log \in [R -> Log]
-    /\ \A l \in Range(log):
-        \A i \in DOMAIN l: l[i].auditQC = {} <=> l[i].auditQCVotes = {}
+BranchTypeOK ==
+    /\ branch \in [R -> Branch]
+    /\ \A b \in Range(branch):
+        \A i \in DOMAIN b: b[i].auditQC = {} <=> b[i].auditQCVotes = {}
 
 NetworkTypeOK ==
     \A r, s \in R:
@@ -175,7 +175,7 @@ NetworkTypeOK ==
 TypeOK == 
     /\ viewStable \in [R -> BOOLEAN]
     /\ view \in [R -> Views]
-    /\ LogTypeOK
+    /\ BranchTypeOK
     /\ NetworkTypeOK
     /\ leader \in [R -> BOOLEAN]
     /\ prepareQC \in [R -> [R -> Nat]]
@@ -190,7 +190,7 @@ TypeOK ==
 Init == 
     /\ view = [r \in R |-> 0]
     /\ network = [r \in R |-> [s \in R |-> <<>>]]
-    /\ log = [r \in R |-> <<>>]
+    /\ branch = [r \in R |-> <<>>]
     /\ leader \in { f \in [ R -> BOOLEAN ] : Cardinality({ r \in R : f[r] }) = 1 }
     /\ prepareQC = [r \in R |-> [s \in R |-> 0]]
     /\ commitIndex = [r \in R |-> 0]
@@ -201,81 +201,81 @@ Init ==
 ----
 \* ACTIONS
 
-IsAuditQC(e) ==
-    e.auditQC # {}
+IsAuditQC(batch) ==
+    batch.auditQC # {}
 
-IsCommitQC(e) ==
-    e.commitQC # {}
+IsCommitQC(batch) ==
+    batch.commitQC # {}
 
-\* Given a log l, returns the index of the highest log entry with a commitQC, 0 if the log contains no commitQCs
-HighestCommitQC(l) ==
-    LET idx == SelectLastInSeq(l, IsCommitQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].commitQC)
+\* Given a branch b, returns the index of the highest batch with a commitQC, 0 if the branch contains no commitQCs
+HighestCommitQC(b) ==
+    LET idx == SelectLastInSeq(b, IsCommitQC)
+    IN IF idx = 0 THEN 0 ELSE Max(b[idx].commitQC)
 
-\* Given a log l, returns the index of the highest log entry with a auditQC, 0 if the log contains no auditQCs
-HighestAuditQC(l) ==
-    LET idx == SelectLastInSeq(l, IsAuditQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].auditQC)
+\* Given a branch b, returns the index of the highest batch with a auditQC, 0 if the branch contains no auditQCs
+HighestAuditQC(b) ==
+    LET idx == SelectLastInSeq(b, IsAuditQC)
+    IN IF idx = 0 THEN 0 ELSE Max(b[idx].auditQC)
 
-\* Given a log l, returns the index of the highest log entry with a auditQC over a auditQC
-HighestQCOverQC(l) ==
-    LET lidx == HighestAuditQC(l)
-        idx == SelectLastInSubSeq(l, 1, lidx, IsAuditQC)
-    IN IF idx = 0 THEN 0 ELSE Max(l[idx].auditQC)
+\* Given a branch b, returns the index of the highest batch with a auditQC over a auditQC
+HighestQCOverQC(b) ==
+    LET auditQCIndex == HighestAuditQC(b)
+        idx == SelectLastInSubSeq(b, 1, auditQCIndex, IsAuditQC)
+    IN IF idx = 0 THEN 0 ELSE Max(b[idx].auditQC)
 
-\* Given a log l, this operator returns the highest index of a log entry for which a *Quorum Certificate* (QC)
-\* exists. Note, the index of the log entry with the QC corresponds to a higher log index than the returned
+\* Given a branch b, this operator returns the highest index of a batch for which a *Quorum Certificate* (QC)
+\* exists. Note, the index of the batch with the QC corresponds to a higher branch index than the returned
 \* index. This QC is formed by unanimous **auditQCVotes** from replicas.
-\* Since a vote by a replica r for some index n implicitly serves as a vote for all log entries at index b and
+\* Since a vote by a replica r for some index n implicitly serves as a vote for all batches at index b and
 \* below, the returned highest index might not have directly received a unanimous vote.  Instead, replicas may
 \* have voted for this index transitively by voting for higher indices.
-\* The pair (idx, r) is a vote by replica r for log index idx. While this vote may not yet be recorded in the
-\* log, this operator is robust against it.
-HighestUnanimity(l, idx, r) ==
-    \* Traverse the log *backwards* and record the replicas that have voted for the current idx or higher 
+\* The pair (idx, r) is a vote by replica r for branch index idx. While this vote may not yet be recorded in the
+\* branch, this operator is robust against it.
+HighestUnanimity(b, idx, r) ==
+    \* Traverse the branch *backwards* and record the replicas that have voted for the current idx or higher
     \* indices (see V).
     LET \* Include r's vote in V of 1..i if r voted for index i.
-        V(S, i) == S \cup l[i].auditQCVotes \cup IF i <= idx THEN {r} ELSE {}
+        V(S, i) == S \cup b[i].auditQCVotes \cup IF i <= idx THEN {r} ELSE {}
         RECURSIVE RUnanimity(_,_)
         RUnanimity(i, S) ==
             IF i = 0 THEN {0}
             ELSE IF V(S, i) = R 
-                 THEN l[i].auditQC
+                 THEN b[i].auditQC
                  ELSE RUnanimity(i-1, V(S, i))
-    IN RUnanimity(Len(l), {})
+    IN RUnanimity(Len(b), {})
 
 Max2(a,b) == IF a > b THEN a ELSE b
 Min2(a,b) == IF a < b THEN a ELSE b
 
-MaxQuorum(Q, l, m, default) == 
+MaxQuorum(Q, b, m, default) ==
     LET RECURSIVE RMaxQuorum(_)
         RMaxQuorum(i) ==
             IF i = default THEN default
             ELSE IF \E q \in Q: \A n \in q: m[n] >= i
                  THEN i ELSE RMaxQuorum(i-1)
-    IN RMaxQuorum(Len(l))
+    IN RMaxQuorum(Len(b))
 
-\* Checks if a log l is well formed e.g. views are monotonically increasing
-WellFormedLog(l) ==
-    \A i \in DOMAIN l :
+\* Checks if a branch b is well formed e.g. views are monotonically increasing
+WellFormedBranch(b) ==
+    \A i \in DOMAIN b :
         \* check views are monotonically increasing
-        /\ i > 1 => l[i-1].view <= l[i].view
+        /\ i > 1 => b[i-1].view <= b[i].view
         \* check auditQCs are well formed
-        /\ \A q \in l[i].auditQC :
-            \* auditQCs are always for previous entries
+        /\ \A q \in b[i].auditQC :
+            \* auditQCs are always for previous batches
             /\ q < i
             \* auditQCs are always formed in the current view 
-            /\ l[q].view = l[i].view
+            /\ b[q].view = b[i].view
             \* auditQCs are in increasing order
             /\ \A j \in 1..i-1 : 
-                \A qj \in l[j].auditQC: qj < q
+                \A qj \in b[j].auditQC: qj < q
         \* check commitQCs are well formed
-        /\ \A q \in l[i].commitQC :
-            \* commitQCs are always for previous entries
+        /\ \A q \in b[i].commitQC :
+            \* commitQCs are always for previous batches
             /\ q < i
             \* commitQCs are in increasing order
             /\ \A j \in 1..i-1 : 
-                \A qj \in l[j].commitQC: qj < q
+                \A qj \in b[j].commitQC: qj < q
 
 \* Replica r handling AppendEntries from leader p
 ReceiveEntries(r, p) ==
@@ -285,29 +285,29 @@ ReceiveEntries(r, p) ==
     /\ Head(network[r][p]).type = "AppendEntries"
     \* the replica must be in the same view
     /\ view[r] = Head(network[r][p]).view
-    \* and must be replicating an entry from this view
-    /\ Last(Head(network[r][p]).log).view = view[r]
-    \* the replica only appends (one entry at a time) to its log
-    /\ log[r] = Front(Head(network[r][p]).log)
-    \* received log must be well formed
-    /\ WellFormedLog(Head(network[r][p]).log)
-    \* for convenience, we replace the replica's log with the received log but in practice we are only appending one entry
-    /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
+    \* and must be replicating a batch from this view
+    /\ Last(Head(network[r][p]).branch).view = view[r]
+    \* the replica only appends (one batch at a time) to its branch
+    /\ branch[r] = Front(Head(network[r][p]).branch)
+    \* received branch must be well formed
+    /\ WellFormedBranch(Head(network[r][p]).branch)
+    \* for convenience, we replace the replica's branch with the received branch but in practice we are only appending one batch
+    /\ branch' = [branch EXCEPT ![r] =  Head(network[r][p]).branch]
     \* we remove the AppendEntries message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
         ![p][r] = Append(@,[
             type |-> "Vote",
             view |-> view[r],
-            log |-> log'[r]
+            branch |-> branch'[r]
             ])
         ]
     \* replica updates its commit index provided the new commit index is greater than the current one
     \* the only time a commit index can decrease is on the receipt of a NewView message if there's been a byz attack
-    /\ commitIndex' = [commitIndex EXCEPT ![r] = Max2(@, HighestCommitQC(log'[r]))]
+    /\ commitIndex' = [commitIndex EXCEPT ![r] = Max2(@, HighestCommitQC(branch'[r]))]
     \* assumes that a replica can safely consider a transaction audited if there's a quorum certificate over a quorum certificate
-    /\ LET AuditIndex == HighestQCOverQC(log'[r])
-           fastAuditIndexes == HighestUnanimity(log'[r], 0, r)
+    /\ LET AuditIndex == HighestQCOverQC(branch'[r])
+           fastAuditIndexes == HighestUnanimity(branch'[r], 0, r)
        IN auditIndex' = [auditIndex EXCEPT ![r] = Max({@} \cup {AuditIndex} \cup fastAuditIndexes) ]
     /\ UNCHANGED <<leader, view, prepareQC, byzActions, viewStable>>
 
@@ -322,8 +322,8 @@ ReceiveNewView(r, p) ==
     /\ p = Leader(Head(network[r][p]).view)
     \* the replica must be in the same view or lower
     /\ view[r] \leq Head(network[r][p]).view
-    \* received log must be well formed
-    /\ WellFormedLog(Head(network[r][p]).log)
+    \* received branch must be well formed
+    /\ WellFormedBranch(Head(network[r][p]).branch)
     \* update the replica's local view
     \* note that we do not dispatch a view change message as a leader has already been elected
     /\ view' = [view EXCEPT ![r] = Head(network[r][p]).view]
@@ -332,29 +332,29 @@ ReceiveNewView(r, p) ==
     /\ viewStable' = [viewStable EXCEPT ![r] = FALSE]
     \* reset prepareQCs, in case view was updated
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
-    \* the replica replaces its log with the received log
-    /\ log' = [log EXCEPT ![r] =  Head(network[r][p]).log]
+    \* the replica replaces its branch with the received branch
+    /\ branch' = [branch EXCEPT ![r] =  Head(network[r][p]).branch]
     \* we remove the NewView message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
         ![p][r] = Append(@,[
             type |-> "Vote",
             view |-> view[r],
-            log |-> log'[r]
+            branch |-> branch'[r]
             ])
         ]
     \* replica must update its commit index
     \* Commit index may be decreased if there's been an byz attack
-    /\ commitIndex' = [commitIndex EXCEPT ![r] = Min2(@, Len(log'[r]))]
+    /\ commitIndex' = [commitIndex EXCEPT ![r] = Min2(@, Len(branch'[r]))]
     /\ UNCHANGED <<byzActions, auditIndex>>
 
 \* True iff leader p is in a stable view
-\* A view is stable when an audit quorum has the view's first log entry
+\* A view is stable when an audit quorum has the view's first batch
 CheckViewStability(p) ==
-    LET inView(e) == e.view=view[p] IN
+    LET inView(batch) == batch.view=view[p] IN
     \E Q \in AQ: 
         \A q \in Q: 
-            prepareQC'[p][q] >= SelectInSeq(log[p], inView)
+            prepareQC'[p][q] >= SelectInSeq(branch[p], inView)
 
 \* Leader p receiving votes from replica r
 ReceiveVote(p, r) ==
@@ -365,8 +365,8 @@ ReceiveVote(p, r) ==
     /\ Head(network[p][r]).type = "Vote"
     /\ view[p] = Head(network[p][r]).view
     /\ prepareQC' = [prepareQC EXCEPT 
-        ![p][r] = IF @ \leq Len(Head(network[p][r]).log) 
-        THEN Len(Head(network[p][r]).log) 
+        ![p][r] = IF @ \leq Len(Head(network[p][r]).branch)
+        THEN Len(Head(network[p][r]).branch)
         ELSE @]
     \* we remove the Vote message.
     /\ network' = [network EXCEPT ![p][r] = Tail(network[p][r])]
@@ -376,21 +376,21 @@ ReceiveVote(p, r) ==
     \* If view is stable, then the leader can update its commit indexes
     /\ IF viewStable'[p] THEN 
             /\ commitIndex' = [commitIndex EXCEPT ![p] = 
-                MaxQuorum(CQ, log[p], prepareQC'[p], @)]
-            /\ LET AuditIndex == HighestAuditQC(SubSeq(log[p], 1, MaxQuorum(AQ, log[p], prepareQC'[p], 0)))
-                   fastAuditIndexes == HighestUnanimity(log[p], prepareQC'[p][r], r)
+                MaxQuorum(CQ, branch[p], prepareQC'[p], @)]
+            /\ LET AuditIndex == HighestAuditQC(SubSeq(branch[p], 1, MaxQuorum(AQ, branch[p], prepareQC'[p], 0)))
+                   fastAuditIndexes == HighestUnanimity(branch[p], prepareQC'[p][r], r)
                IN auditIndex' = [auditIndex EXCEPT ![p] = Max({@} \cup fastAuditIndexes \cup {AuditIndex}) ]
         ELSE UNCHANGED <<commitIndex, auditIndex>>
-    /\ UNCHANGED <<view, log, leader, byzActions>>
+    /\ UNCHANGED <<view, branch, leader, byzActions>>
 
-MaxCommitQC(l,p) ==
-    IF commitIndex[p] > HighestCommitQC(l)
+MaxCommitQC(b,p) ==
+    IF commitIndex[p] > HighestCommitQC(b)
     THEN {commitIndex[p]}
     ELSE {}
 
-MaxAuditQC(l, m) == 
-    LET idx == MaxQuorum(AQ, l, m, 0) IN
-    IF idx > HighestAuditQC(l)
+MaxAuditQC(b, m) ==
+    LET idx == MaxQuorum(AQ, b, m, 0) IN
+    IF idx > HighestAuditQC(b)
     THEN [n |-> {idx}, v |-> {r \in DOMAIN m : m[r] >= idx}]
     ELSE [n |-> {}, v |-> {}]
 
@@ -402,14 +402,14 @@ SendEntries(p) ==
     /\ viewStable[p]
     /\ \E tx \in Txs:
         \* leader will not send an appendEntries to itself so update prepareQC here
-        /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(log[p]) + 1]
-        \* add the new entry to the log
-        /\ LET qc == MaxAuditQC(log[p], prepareQC'[p]) IN
-           log' = [log EXCEPT ![p] = Append(@, [
+        /\ prepareQC' = [prepareQC EXCEPT ![p][p] = Len(branch[p]) + 1]
+        \* add the new batch to the branch
+        /\ LET qc == MaxAuditQC(branch[p], prepareQC'[p]) IN
+           branch' = [branch EXCEPT ![p] = Append(@, [
             view |-> view[p],
             \* for simplicity, each txn batch includes a single txn
             tx |-> <<tx>>,
-            commitQC |-> MaxCommitQC(log[p], p),
+            commitQC |-> MaxCommitQC(branch[p], p),
             auditQC |-> qc.n,
             auditQCVotes |-> qc.v])]
         /\ network' = 
@@ -417,7 +417,7 @@ SendEntries(p) ==
                 IF s # p \/ r=p THEN network[r][s] ELSE Append(network[r][s], [ 
                     type |-> "AppendEntries",
                     view |-> view[p],
-                    log |-> log'[p]])]]
+                    branch |-> branch'[p]])]]
         /\ UNCHANGED <<view, leader, commitIndex, auditIndex, byzActions, viewStable>>
 
 \* Replica r times out
@@ -427,39 +427,39 @@ Timeout(r) ==
     /\ network' = [network EXCEPT ![Leader(view'[r])][r] = Append(@, [
         type |-> "ViewChange",
         view |-> view'[r],
-        log |-> log[r]])
+        branch |-> branch[r]])
         ]
     \* step down if replica was a leader
     /\ leader' = [leader EXCEPT ![r] = FALSE]
     /\ viewStable' = [viewStable EXCEPT ![r] = FALSE]
     \* reset prepareQCs, these are not used until the node is elected leader
     /\ prepareQC' = [prepareQC EXCEPT ![r] = [s \in R |-> 0]]
-    /\ UNCHANGED <<log, commitIndex, auditIndex, byzActions>>
+    /\ UNCHANGED <<branch, commitIndex, auditIndex, byzActions>>
 
-\* The view of the highest auditQC in log l, -1 if log contains no qcs
-HighestQCView(l) == 
-    LET idx == HighestAuditQC(l) IN
-    IF idx = 0 THEN -1 ELSE l[idx].view
+\* The view of the highest auditQC in branch b, -1 if branch contains no qcs
+HighestQCView(b) ==
+    LET idx == HighestAuditQC(b) IN
+    IF idx = 0 THEN -1 ELSE b[idx].view
 
-\* True if log l is valid log choice from the set of logs ls.
-\* Assumes that l \in ls
-LogChoiceRule(l,ls) ==
-    \* if all logs are empty, then any l must be empty and a valid choice  
-    \/ \A l2 \in ls: l2 = <<>>
-    \/ /\ l # <<>>
-        \* l is valid if all other logs in ls are empty or l is from a higher view or 
-       /\ LET v1 == HighestQCView(l)                     
-          IN \A l2 \in ls:
-                \* l is valid if all other logs in ls are empty or...
-                l # l2 /\ l2 # <<>> 
-                =>  LET v2 == HighestQCView(l2) IN
-                    \* l is from a higher view or...
+\* True if branch b is valid branch choice from the set of branches bs.
+\* Assumes that b \in bs
+BranchChoiceRule(b,bs) ==
+    \* if all branches are empty, then any b must be empty and a valid choice
+    \/ \A b2 \in bs: b2 = <<>>
+    \/ /\ b # <<>>
+        \* b is valid if all other branches in bs are empty or b is from a higher view or
+       /\ LET v1 == HighestQCView(b)
+          IN \A b2 \in bs:
+                \* b is valid if all other branches in bs are empty or...
+                b # b2 /\ b2 # <<>>
+                =>  LET v2 == HighestQCView(b2) IN
+                    \* b is from a higher view or...
                     \/ v1 > v2
-                    \* l is from the same view but at least as long
+                    \* b is from the same view but at least as long
                     \/ /\ v1 = v2
-                       /\ \/ Last(l).view > Last(l2).view
-                          \/ /\ Last(l).view = Last(l2).view 
-                             /\ Len(l) >= Len(l2)
+                       /\ \/ Last(b).view > Last(b2).view
+                          \/ /\ Last(b).view = Last(b2).view
+                             /\ Len(b) >= Len(b2)
 
 \* Replica r becomes leader
 BecomeLeader(r) ==
@@ -471,17 +471,17 @@ BecomeLeader(r) ==
             /\ network[r][n] # <<>>
             /\ Head(network[r][n]).type = "ViewChange"
             /\ view[r] = Head(network[r][n]).view
-        /\ \E l1 \in {Head(network[r][n]).log : n \in q}:
-            \* Non-deterministically pick a log from the set of logs in the quorum that satisfy the log choice rule.
-            /\ LogChoiceRule(l1, {Head(network[r][n]).log : n \in q})
-            \* Leader adopts chosen log and adds a new entry in the new view
-            /\ log' = [log EXCEPT ![r] = Append(l1, [
+        /\ \E b1 \in {Head(network[r][n]).branch : n \in q}:
+            \* Non-deterministically pick a branch from the set of branches in the quorum that satisfy the branch choice rule.
+            /\ BranchChoiceRule(b1, {Head(network[r][n]).branch : n \in q})
+            \* Leader adopts chosen branch and adds a new batch in the new view
+            /\ branch' = [branch EXCEPT ![r] = Append(b1, [
                 view |-> view[r],
                 tx |-> <<>>,
                 commitQC |-> {},
                 auditQC |-> {},
                 auditQCVotes |-> {}])]
-            /\ prepareQC' = [prepareQC EXCEPT ![r][r] = Len(log'[r])]
+            /\ prepareQC' = [prepareQC EXCEPT ![r][r] = Len(branch'[r])]
         \* Need to update network to remove the view change message and send a NewView message to all replicas
         /\ network' = [r1 \in R |-> [r2 \in R |-> 
             IF r1 = r /\ r2 \in q 
@@ -490,14 +490,14 @@ BecomeLeader(r) ==
                 THEN Append(network[r1][r2], [ 
                     type |-> "NewView",
                     view |-> view[r],
-                    log |-> log'[r]])
+                    branch |-> branch'[r]])
                 ELSE network[r1][r2]]]
     \* replica becomes a leader
     /\ leader' = [leader EXCEPT ![r] = TRUE]
     \* leader updates its commit indexes
     \* Commit index may be decreased if there's been an byz attack
     /\ commitIndex' = [commitIndex EXCEPT 
-        ![r] = Max2(Min2(@, Len(log'[r])), HighestCommitQC(log'[r]))]
+        ![r] = Max2(Min2(@, Len(branch'[r])), HighestCommitQC(branch'[r]))]
     /\ UNCHANGED <<view, byzActions, auditIndex, viewStable>>
 
 \* Replicas will discard messages from previous views or extra view changes messages
@@ -508,13 +508,13 @@ DiscardMessages ==
             network' = [network EXCEPT ![r][s] = SelectSeq(@, 
                 LAMBDA m: ~(m.view < view[r] \/ 
                     (m.view = view[r] /\ m.type = "ViewChange" /\ leader[r])))]
-    /\ UNCHANGED <<view, log, leader, prepareQC, commitIndex, auditIndex, byzActions, viewStable>>
+    /\ UNCHANGED <<view, branch, leader, prepareQC, commitIndex, auditIndex, byzActions, viewStable>>
 
 ----
 \* BYZANTINE ACTIONS
 \* Byzantine actions can only be taken by Byzantine replicas (BR) and if there are Byzantine actions left to take
 
-\* A Byzantine replica might vote for an entry without actually appending it to its log.
+\* A Byzantine replica might vote for a batch without actually appending it to its branch.
 \* This Byzantine action currently has the same preconditions as AppendEntries
 ByzOmitEntries(r, p) ==
     /\ r \in BR
@@ -526,25 +526,25 @@ ByzOmitEntries(r, p) ==
     /\ Head(network[r][p]).type = "AppendEntries"
     \* the replica must be in the same view
     /\ view[r] = Head(network[r][p]).view
-    \* the replica only appends one entry to its log
-    /\ log[r] = Front(Head(network[r][p]).log)
+    \* the replica only appends one batch to its branch
+    /\ branch[r] = Front(Head(network[r][p]).branch)
     \* we remove the AppendEntries message and reply with a Vote message.
     /\ network' = [network EXCEPT 
         ![r][p] = Tail(@),
         ![p][r] = Append(@,[
             type |-> "Vote",
             view |-> view[r],
-            log |-> Head(network[r][p]).log
+            branch |-> Head(network[r][p]).branch
             ])
         ]
-    /\ UNCHANGED <<leader, view, prepareQC, commitIndex, auditIndex, log, viewStable>>
+    /\ UNCHANGED <<leader, view, prepareQC, commitIndex, auditIndex, branch, viewStable>>
 
 \* Given an append entries message, returns the same message with the txn changed to 1
 ModifyAppendEntries(m) == [
     type |-> "AppendEntries",
     view |-> m.view,
-    log |-> SubSeq(m.log,1,Len(m.log)-1) \o 
-        <<[Last(m.log) EXCEPT !.tx = <<1>>]>>
+    branch |-> SubSeq(m.branch,1,Len(m.branch)-1) \o
+        <<[Last(m.branch) EXCEPT !.tx = <<1>>]>>
 ]
 
 
@@ -556,10 +556,10 @@ ByzLeaderEquivocate(p) ==
     /\ \E r \in R:
         /\ network[r][p] # <<>>
         /\ Head(network[r][p]).type = "AppendEntries"
-        /\ Head(network[r][p]).log # <<>>
+        /\ Head(network[r][p]).branch # <<>>
         /\ network' = [network EXCEPT 
             ![r][p][1] = ModifyAppendEntries(@)]
-    /\ UNCHANGED <<view, log, leader, prepareQC, commitIndex, auditIndex, viewStable>>
+    /\ UNCHANGED <<view, branch, leader, prepareQC, commitIndex, auditIndex, viewStable>>
 
 \* Next state relation
 \* Note that the Byzantine actions are included here but can be disabled by setting MaxByzActions to 0 or BR to {}.
@@ -601,72 +601,72 @@ Spec ==
 CR == IF byzActions = 0 THEN R ELSE HR
 
 Committed(r) ==
-    SubSeq(log[r], 1, commitIndex[r])
+    SubSeq(branch[r], 1, commitIndex[r])
 
-\* The view of a log entry is always greater than or equal to the view of the previous entry, i.e.,
-\* the view of log entries is (non-strictly) monotonically increasing.
+\* The view of a batch is always greater than or equal to the view of the previous batch, i.e.,
+\* the view of batches is (non-strictly) monotonically increasing.
 ViewMonotonicInv ==
     \A r \in R :
-        \A i \in 2..Len(log[r]) :
-            log[r][i].view >= log[r][i-1].view
+        \A i \in 2..Len(branch[r]) :
+            branch[r][i].view >= branch[r][i-1].view
 
-\* Every view starts with a view stabilization log entry. Moreover, view 0 is always stable.
-\* Therefore, view 0 has no view stabilization log entry.
+\* Every view starts with a view stabilization batch. Moreover, view 0 is always stable.
+\* Therefore, view 0 has no view stabilization batch.
 ViewStabilizationInv ==
     \A r \in R :
-        /\ \A i \in 1..Len(log[r]) :
-            /\ log[r][i].tx = <<>> => log[r][i].view # 0
-            /\ i > 1 /\ log[r][i].view > log[r][i-1].view => log[r][i].tx = <<>>
+        /\ \A i \in 1..Len(branch[r]) :
+            /\ branch[r][i].tx = <<>> => branch[r][i].view # 0
+            /\ i > 1 /\ branch[r][i].view > branch[r][i-1].view => branch[r][i].tx = <<>>
 
-\* Ignoring view stabilization log entries (modeled as empty txs), true iff the log p is a prefix of log l.
-IsPrefixWithoutEmpty(p, l) ==
-    \* p can be longer than l. Suppose l matches p as a prefix up to index i, but the suffix of p starting
-    \* at i+1 contains only view stabilization log entries. By adding the condition Len(p) <= Len(l), we
-    \* ensure that such cases are not considered as p being a prefix of l. Instead, we require that l is at
-    \* least as long as p, ensuring that l has a suffix distinct from p.
-    \* Independently, this condition prevents out-of-bounds access when p is longer than l. For example, if
-    \* l = <<>> (an empty sequence), attempting to access l[k] in the disjunct p[k] = l[k] would lead to an
+\* Ignoring view stabilization batches (modeled as empty txs), true iff the branch p is a prefix of branch b.
+IsPrefixWithoutEmpty(p, b) ==
+    \* p can be longer than b. Suppose b matches p as a prefix up to index i, but the suffix of p starting
+    \* at i+1 contains only view stabilization batches. By adding the condition Len(p) <= Len(b), we
+    \* ensure that such cases are not considered as p being a prefix of b. Instead, we require that b is at
+    \* least as long as p, ensuring that b has a suffix distinct from p.
+    \* Independently, this condition prevents out-of-bounds access when p is longer than b. For example, if
+    \* b = <<>> (an empty sequence), attempting to access b[k] in the disjunct p[k] = b[k] would lead to an
     \* out-of-bounds access.
-    /\ Len(p) <= Len(l)
+    /\ Len(p) <= Len(b)
     /\ \A k \in 1..Len(p):
-          \/ p[k] = l[k]
+          \/ p[k] = b[k]
           \/ p[k].tx = <<>>
 
-\* If no Byzantine actions have been taken, then the committed logs of all replicas must be prefixes of each other
-\* This, together with CommittedLogAppendOnlyProp, is the classic CFT safety property
+\* If no Byzantine actions have been taken, then the committed branches of all replicas must be prefixes of each other
+\* This, together with CommittedBranchAppendOnlyProp, is the classic CFT safety property
 \* Note that if any nodes have been Byzantine, then this property is not guaranteed to hold on any node
-\* LogInv implies that the audited logs of replicas are prefixes too, 
+\* BranchInv implies that the audited branches of replicas are prefixes too,
 \* as IndexBoundsInv ensures that the auditIndex is always less than or equal to the commitIndex.
-LogInv ==
+BranchInv ==
     byzActions = 0 =>
         \A i, j \in R :
             \/ IsPrefixWithoutEmpty(Committed(i),Committed(j)) 
             \/ IsPrefixWithoutEmpty(Committed(j),Committed(i))
 
 Audited(r) ==
-    SubSeq(log[r], 1, auditIndex[r])
+    SubSeq(branch[r], 1, auditIndex[r])
 
-\* Variant of LogInv for the audit index and correct replicas only
+\* Variant of BranchInv for the audit index and correct replicas only
 \* We make no assertions about the state of Byzantine replicas
-AuditLogInv ==
+AuditBranchInv ==
     \A i, j \in CR :
         \/ IsPrefix(Audited(i),Audited(j)) 
         \/ IsPrefix(Audited(j),Audited(i))
 
-\* If no Byzantine actions have been taken, then each replica only appends to its committed log
+\* If no Byzantine actions have been taken, then each replica only appends to its committed branch
 \* Note that this invariant allows empty blocks (sent at the start of a view) to be rolled back
-CommittedLogAppendOnlyProp ==
+CommittedBranchAppendOnlyProp ==
     [][byzActions = 0 => 
         \A i \in R :
         IsPrefixWithoutEmpty(Committed(i), Committed(i)')]_vars
 
-\* All correct replicas only append to their audited logs
+\* All correct replicas only append to their audited branches
 MonotonicAuditedIndexProp ==
     [][\A i \in CR :
         auditIndex[i] <= auditIndex'[i]]_vars
 
-\* Each correct replica only appends to its audited log
-AuditedLogAppendOnlyProp ==
+\* Each correct replica only appends to its audited branch
+AuditedBranchAppendOnlyProp ==
     [][\A i \in CR :
         IsPrefix(Audited(i), Audited(i)')]_vars
 
@@ -680,11 +680,11 @@ OneLeaderPerViewInv ==
 \* The audit index is always less than or equal to the commit index
 IndexBoundsInv ==
     \A r \in CR :
-        /\ commitIndex[r] <= Len(log[r])
+        /\ commitIndex[r] <= Len(branch[r])
         /\ auditIndex[r] <= commitIndex[r]
 
-\* The log of each replica is well formed
-WellFormedLogInv ==
-    \A r \in CR : WellFormedLog(log[r])
+\* The branch of each replica is well formed
+WellFormedBranchInv ==
+    \A r \in CR : WellFormedBranch(branch[r])
 
 ====

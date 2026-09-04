@@ -11,7 +11,7 @@ MCTimeout(r) ==
 Symmetry ==
     Permutations(R)
 
-MaxLogLength ==
-    \A r \in R: Len(log[r]) <= 4
+MaxBranchLength ==
+    \A r \in R: Len(branch[r]) <= 4
 
 =====
