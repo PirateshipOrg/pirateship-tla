@@ -1,0 +1,47 @@
+cff-version: 1.2.0
+message: "If you use this specification, please cite the paper below."
+title: "PirateShip TLA+"
+type: software
+authors:
+  - given-names: Heidi
+    family-names: Howard
+    orcid: "https://orcid.org/0000-0001-5256-7664"
+  - given-names: Markus Alexander
+    family-names: Kuppe
+repository-code: "https://github.com/PirateshipOrg/pirateship-tla"
+preferred-citation:
+  type: conference-paper
+  title: "Pirateship: Append-Only Ledgers for (Mostly) Trusted Execution Environments"
+  authors:
+    - given-names: Shubham
+      family-names: Mishra
+      orcid: "https://orcid.org/0009-0000-7906-9737"
+    - given-names: João
+      family-names: Gonçalves
+      orcid: "https://orcid.org/0000-0002-0131-1324"
+    - given-names: Chawinphat
+      family-names: Tankuranand
+      orcid: "https://orcid.org/0009-0005-0260-5999"
+    - given-names: Natacha
+      family-names: Crooks
+      orcid: "https://orcid.org/0000-0002-3567-801X"
+    - given-names: Neil
+      family-names: Giridharan
+      orcid: "https://orcid.org/0009-0008-2175-2611"
+    - given-names: Heidi
+      family-names: Howard
+      orcid: "https://orcid.org/0000-0001-5256-7664"
+    - given-names: Chris
+      family-names: Jensen
+      orcid: "https://orcid.org/0009-0009-6076-7530"
+  collection-title: "Proceedings of the ACM SIGOPS 32nd Symposium on Operating Systems Principles"
+  conference:
+    name: "SOSP '26: ACM SIGOPS 32nd Symposium on Operating Systems Principles"
+  publisher:
+    name: ACM
+  year: 2026
+  month: 9
+  start: 730
+  end: 745
+  doi: "10.1145/3830418.3843903"
+  url: "https://doi.org/10.1145/3830418.3843903"
