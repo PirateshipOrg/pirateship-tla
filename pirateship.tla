@@ -34,7 +34,8 @@ ASSUME Cardinality(R) >= 2*u + fsafe + 1
 
 \* Set of all possible transactions
 CONSTANT Txs
-ASSUME Txs # {}
+\* ByzLeaderEquivocate uses transaction 1 when replacing a batch.
+ASSUME 1 \in Txs
 
 \* Maximum number of Byzantine actions across all replicas
 \* This parameter is completely artificial and is used to limit the state space
