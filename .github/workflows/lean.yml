@@ -1,0 +1,54 @@
+name: Lean
+
+on:
+  push:
+    branches: [main]
+    paths: ["lean/**", ".github/workflows/lean.yml", "pirateship.tla"]
+  pull_request:
+    paths: ["lean/**", ".github/workflows/lean.yml", "pirateship.tla"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  specification:
+    runs-on: ubuntu-latest
+    env:
+      MATHLIB_NO_CACHE_ON_UPDATE: "1"
+    defaults:
+      run:
+        working-directory: lean
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Lean toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes elan
+          elan toolchain install "$(cat lean-toolchain)"
+      - name: Restore required Mathlib modules
+        run: lake exe cache get Mathlib.Data.Finset.Card Mathlib.Data.Seq.Defs
+      - name: Build default library and regression witnesses
+        run: lake build
+      - name: Replay default proofs and reject nonstandard axioms
+        # As in CCF CI, only run this unsandboxed command on trusted build infrastructure.
+        run: lake check --inadvisably-no-sandbox
+      - name: Compile explicitly unfinished obligations
+        run: lake build PirateShipObligations
+      - name: Check import coverage and architecture
+        run: lake exe check-imports
+      - name: Lint
+        run: lake lint
+      - name: Fetch TLC correspondence-test dependencies
+        working-directory: .
+        run: |
+          curl --fail --location --output tla2tools.jar \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+          curl --fail --location --output CommunityModules-deps.jar \
+            https://github.com/tlaplus/CommunityModules/releases/download/202610262215/CommunityModules-deps.jar
+      - name: Replay the shared TLA+ trace
+        working-directory: .
+        run: |
+          java -XX:+UseParallelGC -DTLA-Library=. \
+            -cp tla2tools.jar:CommunityModules-deps.jar tlc2.TLC -workers 1 \
+            -config lean/tests/Correspondence.cfg lean/tests/Correspondence.tla

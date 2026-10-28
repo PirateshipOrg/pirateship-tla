@@ -1,0 +1,18 @@
+name = "pirateship"
+version = "0.1.0"
+defaultTargets = ["PirateShip"]
+builtinLint = true
+leanOptions = { autoImplicit = false }
+
+[[require]]
+name = "ccf_common"
+git = "https://github.com/microsoft/CCF.git"
+rev = "59d47cd21004e646981c67d7ec613316840c2f22"
+subDir = "lean/common"
+
+[[lean_lib]]
+name = "PirateShip"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_lib]]
+name = "PirateShipObligations"
