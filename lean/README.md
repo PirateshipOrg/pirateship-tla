@@ -60,7 +60,9 @@ package from its `lean/common` subdirectory, not copied or reimplemented.
 | View ordering and stabilization derived from branch validity | [Proofs/BranchShape.lean](PirateShip/Proofs/BranchShape.lean) |
 | Authentication and branch validity under append-only history growth | [Proofs/History.lean](PirateShip/Proofs/History.lean) |
 | Validated branch reconstruction, commit bounds, and election candidates | [Proofs/BranchValidity.lean](PirateShip/Proofs/BranchValidity.lean) |
-| Coupled reachable branch/commit/installed-view invariant | [Proofs/WellFormed.lean](PirateShip/Proofs/WellFormed.lean) |
+| Slow/fast audit-height bounds and refresh preservation | [Proofs/AuditBounds.lean](PirateShip/Proofs/AuditBounds.lean) |
+| Coupled reachable branch/commit/installed-view invariant and audit step bound | [Proofs/WellFormed.lean](PirateShip/Proofs/WellFormed.lean) |
+| Branch and audited-prefix preservation outside branch installation | [Proofs/AuditPreservation.lean](PirateShip/Proofs/AuditPreservation.lean) |
 | Executable traces and reachable witnesses | [Tests/CanonicalTraces.lean](PirateShip/Tests/CanonicalTraces.lean) |
 | Unfinished general safety proofs | [PirateShipObligations/Pending.lean](PirateShipObligations/Pending.lean) |
 
@@ -220,6 +222,26 @@ adversarial action, and stutter. Induction over CCF reachability establishes
 stabilization then follow without unfinished assumptions. The proof does not
 add safety guards to the protocol or assume audit-history preservation.
 
+Slow-audit calculations are bounded by the validated local branch even for an
+arbitrary outer certificate list: an embedded certificate's target is an earlier
+branch member. Fast-audit calculations are bounded because their targets are
+local branch members. Consequently, `refresh` cannot increase an audit index
+beyond `max oldAuditIndex branch.length`. The effect invariant lifts this bound
+through **every** reachable transition for honest replicas, including branch
+installations.
+
+Outside an honest replica's own branch installation, its branch only grows by prefix,
+so its audited prefix is append-only and an existing audit-index bound is
+preserved. These results also cover installations at other replicas and every
+adversarial action. `MayInstallBranch` is a proof-only, per-replica classification:
+becoming leader or receiving a FIFO-head new-view message. It conservatively
+includes rejected new-view deliveries and adds no protocol acceptance guard.
+The optional audit-index and audited append-only proofs now discharge all other
+cases using these checked results. Their remaining placeholders concern
+installations; retaining an old index while replacing a branch still requires
+the quorum/history argument below. No additional original safety target is
+claimed complete by this supporting proof pass.
+
 The regression theorem `unsigned_commit_counterexample` proves that a reachable
 state can have an honest replica with audit index 1 and commit index 0: a malicious
 leader collects genuine audit votes but keeps its unsigned commit hints at zero.
@@ -242,7 +264,9 @@ commitment, two-hop audits, direct and transitive unanimity, view-change voting,
 stabilization, singleton progress, FIFO delivery, disabled guards, malformed
 messages, forged/duplicate certificate signers, omitted appends, equivocation,
 replays, arbitrary faulty state, and an attempted audited-history rollback using
-genuine but incorrectly applied view-change evidence. Quorum tests distinguish
+genuine but incorrectly applied view-change evidence. Classification tests check
+the affected replica, timeout and empty-queue exclusions, and FIFO-head selection
+when a new-view message is queued behind another message. Quorum tests distinguish
 minimal and nonminimal clusters and configurations where fast auditing is unsafe.
 All witnesses use kernel-checked reduction, not `native_decide`.
 

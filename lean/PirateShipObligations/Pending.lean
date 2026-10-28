@@ -17,9 +17,22 @@ open PirateShip.Model PirateShip.Properties
 /-- Commit bounds are proved; audit bounds across branch replacement remain pending. -/
 theorem index_bounds (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : IndexBounds c s := by
+  have auditBounds : forall r, c.honest r ->
+      (s.nodes r).auditIndex <= (s.nodes r).branch.length := by
+    refine CCF.TransitionSystem.Reachable.rec (system := transitionSystem c)
+      (motive := fun state _ => forall r, c.honest r ->
+        (state.nodes r).auditIndex <= (state.nodes r).branch.length) ?_ ?_ reachable
+    · intro state initialized
+      rcases initialized with ⟨_, rfl⟩
+      intro r _
+      simp [initialState]
+    · intro before after a prior transition ih r honest
+      by_cases installing : MayInstallBranch before a r
+      · sorry
+      · exact audit_index_bound_of_no_installation c before after a
+          prior transition r honest installing (ih r honest)
   intro r honest
-  refine ⟨PirateShip.Properties.commit_index_bounds c s reachable r honest, ?_⟩
-  sorry
+  exact ⟨PirateShip.Properties.commit_index_bounds c s reachable r honest, auditBounds r honest⟩
 
 /-- Pending: clean-execution history invariant linking majority votes and stabilization. -/
 theorem committed_agreement (c : Config) (s : State)
@@ -61,7 +74,10 @@ theorem committed_append_only (c : Config) (before after : State) (a : Action)
 theorem audited_append_only (c : Config) (before after : State) (a : Action)
     (reachable : (transitionSystem c).Reachable before)
     (transition : step c before a = some after) : AuditedAppendOnly c before after := by
-  sorry
+  intro r honest
+  by_cases installing : MayInstallBranch before a r
+  · sorry
+  · exact audited_append_only_of_no_installation c before after a transition r honest installing
 
 /-- Proved for every enabled step, without needing the reachability premise. -/
 theorem monotonic_audit_index (c : Config) (before after : State) (a : Action)

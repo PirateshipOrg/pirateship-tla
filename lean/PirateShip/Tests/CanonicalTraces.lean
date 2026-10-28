@@ -75,6 +75,24 @@ def twoHop : List Action :=
 
 def reports : List ViewChange := [⟨1, 1, [0]⟩, ⟨2, 1, [0]⟩, ⟨3, 1, [0]⟩]
 
+open Properties in
+theorem installation_classification :
+    let s := { initialState four with network := fun _ _ => [.newView 0 reports] }
+    MayInstallBranch s (.becomeLeader 1 reports [0]) 1 /\
+    ¬MayInstallBranch s (.becomeLeader 1 reports [0]) 0 /\
+    MayInstallBranch s (.deliver 1 0) 1 /\
+    ¬MayInstallBranch s (.deliver 1 0) 0 /\
+    ¬MayInstallBranch s (.timeout 1) 1 /\
+    ¬MayInstallBranch (initialState four) (.deliver 1 0) 1 := by
+  simp [MayInstallBranch, initialState]
+
+open Properties in
+theorem queued_new_view_is_not_installation :
+    let s := { initialState four with
+      network := fun _ _ => [.appendEntries 0, .newView 0 reports] }
+    ¬MayInstallBranch s (.deliver 1 0) 1 := by
+  simp [MayInstallBranch]
+
 def election : List Action :=
   unanimous ++ [.timeout 1, .timeout 2, .timeout 3,
     .deliver 1 1, .deliver 1 2, .deliver 1 3, .becomeLeader 1 reports [0]]

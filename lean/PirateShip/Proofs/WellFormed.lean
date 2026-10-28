@@ -2,6 +2,7 @@ module
 
 public import PirateShip.Proofs.BranchValidity
 public import PirateShip.Proofs.Local
+public import PirateShip.Proofs.AuditBounds
 
 @[expose] public section
 
@@ -34,17 +35,22 @@ def StateInvariant (c : Config) (s : State) : Prop :=
   forall r, c.honest r -> NodeInvariant c s (s.nodes r)
 
 def EffectInvariant (c : Config) (s : State) (e : Effect) : Prop :=
-  forall r, c.honest r -> NodeInvariant c (e.apply s) (e.nodes r)
+  forall r, c.honest r ->
+    NodeInvariant c (e.apply s) (e.nodes r) /\
+    (e.nodes r).auditIndex <= max (s.nodes r).auditIndex (e.nodes r).branch.length
 
 theorem effect_invariant_of_nodes {c : Config} {s : State} (prior : StateInvariant c s)
     (e : Effect) (same : e.nodes = s.nodes) : EffectInvariant c s e := by
   intro r honest
   rw [same]
-  exact (prior r honest).history (effect_blocks_prefix s e) (effect_signatures_prefix s e)
+  exact ⟨(prior r honest).history (effect_blocks_prefix s e) (effect_signatures_prefix s e),
+    Nat.le_max_left _ _⟩
 
 theorem EffectInvariant.setLocal {c : Config} {s : State} {e : Effect}
     (valid : EffectInvariant c s e) (r : Replica) (node : LocalState)
-    (updated : c.honest r -> NodeInvariant c (e.apply s) node) :
+    (updated : c.honest r -> NodeInvariant c (e.apply s) node)
+    (bounded : c.honest r ->
+      node.auditIndex <= max (s.nodes r).auditIndex node.branch.length) :
     EffectInvariant c s (e.setLocal r node) := by
   intro other honest
   by_cases same : other = r
@@ -52,34 +58,39 @@ theorem EffectInvariant.setLocal {c : Config} {s : State} {e : Effect}
     have moved := (updated honest).history (after := (e.setLocal r node).apply s)
       ⟨[], by simp [Effect.apply, Effect.setLocal]⟩
       ⟨[], by simp [Effect.apply, Effect.setLocal]⟩
-    simpa [Effect.setLocal] using moved
-  · have moved := (valid other honest).history (after := (e.setLocal r node).apply s)
+    simpa [Effect.setLocal] using And.intro moved (bounded honest)
+  · have moved := (valid other honest).1.history (after := (e.setLocal r node).apply s)
       ⟨[], by simp [Effect.apply, Effect.setLocal]⟩
       ⟨[], by simp [Effect.apply, Effect.setLocal]⟩
-    simpa [Effect.setLocal, same] using moved
+    simpa [Effect.setLocal, same] using And.intro moved (valid other honest).2
 
 theorem EffectInvariant.append_signatures {c : Config} {s : State} {e : Effect}
     (valid : EffectInvariant c s e) (extra : List Signature) :
     EffectInvariant c s { e with signatures := e.signatures ++ extra } := by
   intro r honest
-  exact (valid r honest).history ⟨[], by simp [Effect.apply]⟩
-    ⟨extra, by simp [Effect.apply, List.append_assoc]⟩
+  exact ⟨(valid r honest).1.history ⟨[], by simp [Effect.apply]⟩
+    ⟨extra, by simp [Effect.apply, List.append_assoc]⟩, (valid r honest).2⟩
 
 theorem EffectInvariant.vote {c : Config} {s : State} {e : Effect}
     (valid : EffectInvariant c s e) (r : Replica) (node : LocalState) (id : BlockId)
-    (updated : c.honest r -> NodeInvariant c (e.apply s) node) :
+    (updated : c.honest r -> NodeInvariant c (e.apply s) node)
+    (bounded : c.honest r ->
+      node.auditIndex <= max (s.nodes r).auditIndex node.branch.length) :
     EffectInvariant c s (voteEffect e r node id) := by
   let vote : Vote := ⟨r, node.view, id⟩
   let next := { addVote node vote with voted := vote :: node.voted }
   have nextValid : c.honest r -> NodeInvariant c (e.apply s) next := by
     intro honest
     simpa only [NodeInvariant, next, addVote] using updated honest
-  exact (valid.setLocal r next nextValid).append_signatures [⟨r, .vote node.view id⟩]
+  exact (valid.setLocal r next nextValid bounded).append_signatures [⟨r, .vote node.view id⟩]
 
 theorem EffectInvariant.refresh {c : Config} {s : State} {e : Effect}
     (valid : EffectInvariant c s e) (r : Replica) :
     EffectInvariant c s (e.setLocal r (refresh c (e.apply s) (e.nodes r))) := by
-  exact valid.setLocal r _ (fun honest => (valid r honest).refresh)
+  apply valid.setLocal r _ (fun honest => (valid r honest).1.refresh)
+  intro honest
+  have bound := refresh_audit_bound c (e.apply s) (e.nodes r) (valid r honest).1.1
+  exact bound.trans (Nat.max_le.mpr ⟨(valid r honest).2, Nat.le_max_right _ _⟩)
 
 theorem EffectInvariant.enqueue {c : Config} {s : State} {e : Effect}
     (valid : EffectInvariant c s e) (recipient sender : Replica) (m : Message) :
@@ -210,7 +221,8 @@ theorem propose_invariant (c : Config) (s : State) (r : Replica) (tx : Nat) (e :
       apply NodeInvariant.proposal (prior r honest) r tx enabled.1.1.2
         enabled.1.1.1.1.1.2 enabled.1.2 rfl (effect_signatures_prefix s base)
       simp [issued, base, Effect.apply]
-    have result := ((baseValid.vote r next s.blocks.length nextValid).refresh r).broadcast
+    have result := ((baseValid.vote r next s.blocks.length nextValid
+      (fun _ => Nat.le_max_left _ _)).refresh r).broadcast
       r (.appendEntries s.blocks.length)
     simp only [Option.some.injEq] at transition
     subst e
@@ -239,7 +251,8 @@ theorem becomeLeader_invariant (c : Config) (s : State) (r : Replica)
       apply new_leader_node_invariant c s (base.apply s) node r reports chosen
         enabled.1.1.1.1.2 enabled.1.1.2 enabled.2 rfl (effect_signatures_prefix s base)
       simp [issued, base, Effect.apply]
-    have result := ((baseValid.vote r next s.blocks.length nextValid).refresh r).broadcast
+    have result := ((baseValid.vote r next s.blocks.length nextValid
+      (fun _ => Nat.le_max_left _ _)).refresh r).broadcast
       r (.newView s.blocks.length reports)
     simp only [Option.some.injEq] at transition
     subst e
@@ -297,7 +310,8 @@ theorem receiveEntries_invariant (c : Config) (s : State) (e : Effect) (r sender
         have checked := received_entries_node_invariant c s (s.nodes r) (prior r honest)
           id b branch found enabled.1.1.1.1.1.2 enabled.1.1.2 enabled.1.2
         exact checked.history (effect_blocks_prefix s e) (effect_signatures_prefix s e)
-      exact ((base.vote r next id updated).refresh r).enqueue sender r (.vote ⟨r, b.view, id⟩)
+      exact ((base.vote r next id updated (fun _ => Nat.le_max_left _ _)).refresh r).enqueue
+        sender r (.vote ⟨r, b.view, id⟩)
     · exact base
   · exact base
 
@@ -308,10 +322,12 @@ theorem receiveVote_invariant (c : Config) (s : State) (e : Effect) (r sender : 
   split
   · split
     · apply base.setLocal
-      intro honest
-      have old : NodeInvariant c s (addVote (s.nodes r) v) := by
-        simpa only [NodeInvariant, addVote] using prior r honest
-      exact old.refresh.history (effect_blocks_prefix s e) (effect_signatures_prefix s e)
+      · intro honest
+        have old : NodeInvariant c s (addVote (s.nodes r) v) := by
+          simpa only [NodeInvariant, addVote] using prior r honest
+        exact old.refresh.history (effect_blocks_prefix s e) (effect_signatures_prefix s e)
+      · intro honest
+        exact refresh_audit_bound c s (addVote (s.nodes r) v) (prior r honest).1
     · exact base
   · exact base
 
@@ -321,9 +337,11 @@ theorem receiveChange_invariant (c : Config) (s : State) (e : Effect) (r sender 
   dsimp only [receiveChange]
   split
   · apply base.setLocal
-    intro honest
-    simpa only [NodeInvariant] using
-      (prior r honest).history (effect_blocks_prefix s e) (effect_signatures_prefix s e)
+    · intro honest
+      simpa only [NodeInvariant] using
+        (prior r honest).history (effect_blocks_prefix s e) (effect_signatures_prefix s e)
+    · intro _
+      exact Nat.le_max_left _ _
   · exact base
 
 theorem receiveNewView_invariant (c : Config) (s : State) (e : Effect) (r sender : Replica)
@@ -347,7 +365,8 @@ theorem receiveNewView_invariant (c : Config) (s : State) (e : Effect) (r sender
           found path enabled.1.1.1.2
         simpa only [NodeInvariant, next] using
           checked.history (effect_blocks_prefix s e) (effect_signatures_prefix s e)
-      exact (base.vote r next id updated).enqueue sender r (.vote ⟨r, b.view, id⟩)
+      exact (base.vote r next id updated (fun _ => Nat.le_max_left _ _)).enqueue
+        sender r (.vote ⟨r, b.view, id⟩)
     · exact base
   · exact base
 
@@ -369,9 +388,9 @@ theorem timeout_invariant (c : Config) (s : State) (r : Replica) (e : Effect)
       have base := effect_invariant_of_nodes prior (Effect.unchanged s) rfl
       have updated : c.honest r -> NodeInvariant c ((Effect.unchanged s).apply s) next := by
         intro honest
-        have old := base r honest
+        have old := (base r honest).1
         exact ⟨old.1, old.2.1, by simp [next]⟩
-      exact ((base.setLocal r next updated).append_signatures
+      exact ((base.setLocal r next updated (fun _ => Nat.le_max_left _ _)).append_signatures
         [⟨r, .viewChange (node.view + 1) node.branch⟩]).enqueue target r
         (.viewChange ⟨r, node.view + 1, node.branch⟩)
 
@@ -425,7 +444,8 @@ theorem dispatch_invariant (c : Config) (s : State) (a : Action) (e : Effect)
         intro same
         exact honest.2 (same ▸ bad)
       simp only [Effect.setLocal, Effect.unchanged, ite_eq_right different]
-      exact (prior r honest).history (effect_blocks_prefix s _) (effect_signatures_prefix s _)
+      exact ⟨(prior r honest).history (effect_blocks_prefix s _) (effect_signatures_prefix s _),
+        Nat.le_max_left _ _⟩
     · contradiction
   | _ =>
     simp only [dispatch] at transition
@@ -446,7 +466,18 @@ theorem state_invariant (c : Config) (s : State)
     simp [StateInvariant, NodeInvariant, initialState, validBranch]
   · intro before after a _ transition prior
     obtain ⟨e, dispatched, rfl⟩ := Option.map_eq_some_iff.mp transition
-    exact dispatch_invariant c before a e prior dispatched
+    intro r honest
+    exact (dispatch_invariant c before a e prior dispatched r honest).1
+
+theorem audit_index_step_bound (c : Config) (before after : State) (a : Action)
+    (reachable : (transitionSystem c).Reachable before)
+    (transition : step c before a = some after) :
+    forall r, c.honest r ->
+      (after.nodes r).auditIndex <= max (before.nodes r).auditIndex (after.nodes r).branch.length := by
+  obtain ⟨e, dispatched, rfl⟩ := Option.map_eq_some_iff.mp transition
+  intro r honest
+  exact (dispatch_invariant c before a e (state_invariant c before reachable)
+    dispatched r honest).2
 
 theorem well_formed_branches (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : WellFormedBranches c s := by

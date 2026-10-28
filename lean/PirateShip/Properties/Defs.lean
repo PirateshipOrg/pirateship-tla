@@ -78,6 +78,16 @@ def AuditedAppendOnly (c : Config) (before after : State) : Prop :=
 def MonotonicAuditIndex (c : Config) (before after : State) : Prop :=
   forall r, c.honest r -> (before.nodes r).auditIndex <= (after.nodes r).auditIndex
 
+/-- A proof-only classification; a new-view delivery may still be rejected. -/
+def MayInstallBranch (s : State) (a : Action) (r : Replica) : Prop :=
+  match a with
+  | .becomeLeader actor _ _ => r = actor
+  | .deliver recipient sender =>
+    r = recipient /\ match s.network recipient sender with
+      | .newView _ _ :: _ => True
+      | _ => False
+  | _ => False
+
 abbrev Trace := CCF.Execution.Trace State
 
 def Always (property : State -> Prop) (trace : Trace) : Prop :=
