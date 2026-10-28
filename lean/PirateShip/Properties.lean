@@ -4,6 +4,8 @@ public import PirateShip.Properties.Defs
 public import PirateShip.Proofs.Foundations
 public import PirateShip.Proofs.Local
 public import PirateShip.Proofs.BranchShape
+public import PirateShip.Proofs.History
+public import PirateShip.Proofs.BranchValidity
 
 @[expose] public section
 
@@ -22,6 +24,25 @@ theorem signatures_persist (c : Config) (before after : State) (a : Action)
     (transition : (transitionSystem c).step before a = some after) :
     before.signatures.IsPrefix after.signatures := by
   exact Proofs.step_signatures_prefix c before after a transition
+
+/-- A fixed validated branch stays valid even when a step changes local branches. -/
+theorem validated_branch_persists (c : Config) (before after : State) (a : Action)
+    (transition : step c before a = some after) (branch : Branch)
+    (valid : validBranch c before branch = true) : validBranch c after branch = true := by
+  exact Proofs.valid_branch_persists c before after a transition branch valid
+
+theorem validated_certificate_persists (c : Config) (before after : State) (a : Action)
+    (transition : step c before a = some after) (qc : Certificate)
+    (valid : validCertificate c before qc = true) : validCertificate c after qc = true := by
+  exact Proofs.validCertificate_of_prefix c before after
+    (Proofs.step_blocks_prefix c before after a transition)
+    (Proofs.step_signatures_prefix c before after a transition) qc valid
+
+theorem successful_chain_persists (c : Config) (before after : State) (a : Action)
+    (transition : step c before a = some after) (id : BlockId) (branch : Branch)
+    (found : chain before id = some branch) : chain after id = some branch := by
+  exact Proofs.chain_of_prefix before after
+    (Proofs.step_blocks_prefix c before after a transition) id branch found
 
 /-- Honest leaders in the same view are the unique designated replica. -/
 theorem election_safety (c : Config) (s : State)

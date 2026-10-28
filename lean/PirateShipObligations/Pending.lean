@@ -34,7 +34,7 @@ theorem election_safety (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : OneLeaderPerView c s := by
   exact PirateShip.Properties.election_safety c s reachable
 
-/-- Pending: preservation of branch validity when the block/signature stores grow. -/
+/-- Pending: coupled honest branch construction, installed-view, and commit-index invariants. -/
 theorem well_formed_branches (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : WellFormedBranches c s := by
   sorry

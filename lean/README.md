@@ -57,6 +57,8 @@ package from its `lean/common` subdirectory, not copied or reimplemented.
 | Quorum, store-preservation, and initialization proofs | [Proofs/Foundations.lean](PirateShip/Proofs/Foundations.lean) |
 | Leader designation and audit-index preservation for all actions | [Proofs/Local.lean](PirateShip/Proofs/Local.lean) |
 | View ordering and stabilization derived from branch validity | [Proofs/BranchShape.lean](PirateShip/Proofs/BranchShape.lean) |
+| Authentication and branch validity under append-only history growth | [Proofs/History.lean](PirateShip/Proofs/History.lean) |
+| Validated branch reconstruction, commit bounds, and election candidates | [Proofs/BranchValidity.lean](PirateShip/Proofs/BranchValidity.lean) |
 | Executable traces and reachable witnesses | [Tests/CanonicalTraces.lean](PirateShip/Tests/CanonicalTraces.lean) |
 | Unfinished general safety proofs | [PirateShipObligations/Pending.lean](PirateShipObligations/Pending.lean) |
 
@@ -173,7 +175,7 @@ model. These choices do not establish equivalence to the Rust implementation.
 | `BranchInv` | `CommittedAgreement` in clean states | Initialization proved; general result pending |
 | `AuditBranchInv` | `AuditedAgreement` for honest replicas | Initialization proved; general result pending |
 | `OneLeaderPerViewInv` | `OneLeaderPerView` for two honest replicas | Proved for all reachable states and valid traces |
-| `WellFormedBranchInv` | `WellFormedBranches` for honest replicas | Initialization proved; preservation pending |
+| `WellFormedBranchInv` | `WellFormedBranches` for honest replicas | Initialization and validity under store growth proved; honest local branch construction invariant pending |
 | `ViewMonotonicInv` | `ViewMonotonic` for honest replicas | Derived from `WellFormedBranches`; reachable-state branch validity still pending |
 | `ViewStabilizationInv` | `ViewStabilization` for honest replicas | Derived from `WellFormedBranches`; reachable-state branch validity still pending |
 | `CommittedBranchAppendOnlyProp` | `CommittedAppendOnly` while the **post-state** is still clean | Pending |
@@ -197,6 +199,21 @@ state-update isolation, and inability of Byzantine signing to mint another
 identity's signature. Local preservation covers ordinary handlers, rejected
 messages, all adversarial actions, and stuttering. The trace interpreter is
 proved sound for `CCF.Execution.Run` and reachability.
+
+Validated branches, certificates, and successful ancestry lookups remain valid
+under every step. The ancestry proof accounts for both immutable block lookups
+and the larger recursion-fuel bound after registry growth. A valid branch has
+no duplicate IDs, fits within the registry, and reconstructs exactly its prefixes:
+the block at position `i` has height `i + 1`. These facts bound commitment
+calculations and `refresh`, provided the input branch is valid and its commit
+index is already in bounds. Locally formed certificates are valid same-view
+certificates for branch members; branch selection with valid evidence returns
+a valid branch from views strictly below the new positive view.
+
+These are supporting lemmas, not a proof of reachable `WellFormedBranches`:
+the latter still needs a coupled induction over honest branch construction,
+installed views, and commit-index bounds. The six remaining placeholders and
+eight unresolved original safety targets are unchanged by these supporting proofs.
 
 The regression theorem `unsigned_commit_counterexample` proves that a reachable
 state can have an honest replica with audit index 1 and commit index 0: a malicious
