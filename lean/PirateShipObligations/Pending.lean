@@ -5,8 +5,9 @@ public import PirateShip.Properties
 @[expose] public section
 
 /-!
-UNFINISHED PROOFS. These declarations are not imported by the trusted PirateShip root.
+UNFINISHED PROOFS. This module is not imported by the trusted PirateShip root.
 Each `sorry` is an explicit outstanding obligation, not an established safety result.
+Completed results below are compatibility wrappers around the checked library.
 -/
 
 namespace PirateShipObligations
@@ -28,25 +29,25 @@ theorem audited_agreement (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : AuditedAgreement c s := by
   sorry
 
-/-- Pending: designated-leader invariant through all handlers and adversarial frame cases. -/
+/-- Proved in the checked library; retained here for compatibility. -/
 theorem election_safety (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : OneLeaderPerView c s := by
-  sorry
+  exact PirateShip.Properties.election_safety c s reachable
 
 /-- Pending: preservation of branch validity when the block/signature stores grow. -/
 theorem well_formed_branches (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : WellFormedBranches c s := by
   sorry
 
-/-- Pending: derive adjacent-view ordering from preserved branch validity. -/
+/-- Conditional only on the unfinished branch-validity invariant. -/
 theorem view_monotonic (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : ViewMonotonic c s := by
-  sorry
+  exact view_monotonic_of_well_formed c s (well_formed_branches c s reachable)
 
-/-- Pending: derive control-batch placement from preserved branch validity. -/
+/-- Conditional only on the unfinished branch-validity invariant. -/
 theorem view_stabilization (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : ViewStabilization c s := by
-  sorry
+  exact view_stabilization_of_well_formed c s (well_formed_branches c s reachable)
 
 /-- Pending: clean view changes preserve committed history, modulo empty control batches. -/
 theorem committed_append_only (c : Config) (before after : State) (a : Action)
@@ -60,11 +61,11 @@ theorem audited_append_only (c : Config) (before after : State) (a : Action)
     (transition : step c before a = some after) : AuditedAppendOnly c before after := by
   sorry
 
-/-- Pending: audit-index frame cases and the maximum in `refresh`. -/
+/-- Proved for every enabled step, without needing the reachability premise. -/
 theorem monotonic_audit_index (c : Config) (before after : State) (a : Action)
-    (reachable : (transitionSystem c).Reachable before)
+    (_reachable : (transitionSystem c).Reachable before)
     (transition : step c before a = some after) : MonotonicAuditIndex c before after := by
-  sorry
+  exact PirateShip.Properties.monotonic_audit_index c before after a transition
 
 /-- Conditional on the unfinished reachable-state proof above. -/
 theorem audited_agreement_on_trace (c : Config) (trace : Trace)
@@ -88,12 +89,9 @@ theorem committed_append_only_on_trace (c : Config) (trace : Trace)
   exact committed_append_only c before after action
     (valid.reachable (Stream'.Seq.get?_mem current)) transition
 
-/-- Conditional on the unfinished audit-index step proof above. -/
+/-- Proved in the checked library, independently of the unfinished obligations. -/
 theorem monotonic_audit_index_on_trace (c : Config) (trace : Trace)
     (valid : trace.Valid (transitionSystem c)) : AlwaysStep (MonotonicAuditIndex c) trace := by
-  intro i before after current next
-  obtain ⟨action, transition⟩ := valid.2 i before after current next
-  exact monotonic_audit_index c before after action
-    (valid.reachable (Stream'.Seq.get?_mem current)) transition
+  exact PirateShip.Properties.monotonic_audit_index_on_trace c trace valid
 
 end PirateShipObligations

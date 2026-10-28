@@ -6,9 +6,13 @@ This is not a literal translation or a fully verified consensus protocol.
 
 The default `PirateShip` library contains no `sorry` and its checked lemmas and
 trace witnesses pass independent kernel replay. **General consensus safety
-proofs are still incomplete.** Ten explicitly marked proof obligations live in
+proofs are still incomplete.** Six explicitly marked `sorry` placeholders remain in
 the separate, non-default [PirateShipObligations](PirateShipObligations/Pending.lean)
-library. Its results must not be used as established theorems.
+library. Eight original safety targets remain unproved: view ordering and
+stabilization are now derived from the still-pending branch-validity invariant.
+Election safety and audit-index monotonicity, including their trace results,
+are fully proved in the default library. Optional declarations that depend on
+the remaining placeholders must not be used as established theorems.
 
 ## Build and validate
 
@@ -49,7 +53,10 @@ package from its `lean/common` subdirectory, not copied or reimplemented.
 | Normal operation, view changes, deliveries, adversary | [Model/Step.lean](PirateShip/Model/Step.lean) |
 | Bundled CCF system and initial predicate | [Model.lean](PirateShip/Model.lean) |
 | State and adjacent-state safety targets | [Properties/Defs.lean](PirateShip/Properties/Defs.lean) |
-| Established public results | [Properties.lean](PirateShip/Properties.lean), [Proofs/Foundations.lean](PirateShip/Proofs/Foundations.lean) |
+| Established public results | [Properties.lean](PirateShip/Properties.lean) |
+| Quorum, store-preservation, and initialization proofs | [Proofs/Foundations.lean](PirateShip/Proofs/Foundations.lean) |
+| Leader designation and audit-index preservation for all actions | [Proofs/Local.lean](PirateShip/Proofs/Local.lean) |
+| View ordering and stabilization derived from branch validity | [Proofs/BranchShape.lean](PirateShip/Proofs/BranchShape.lean) |
 | Executable traces and reachable witnesses | [Tests/CanonicalTraces.lean](PirateShip/Tests/CanonicalTraces.lean) |
 | Unfinished general safety proofs | [PirateShipObligations/Pending.lean](PirateShipObligations/Pending.lean) |
 
@@ -165,13 +172,13 @@ model. These choices do not establish equivalence to the Rust implementation.
 | `auditIndex <= commitIndex` conjunct | `AuditBelowCommit` | **Refuted** under arbitrary Byzantine commit hints |
 | `BranchInv` | `CommittedAgreement` in clean states | Initialization proved; general result pending |
 | `AuditBranchInv` | `AuditedAgreement` for honest replicas | Initialization proved; general result pending |
-| `OneLeaderPerViewInv` | `OneLeaderPerView` for two honest replicas | Initialization proved; preservation pending |
+| `OneLeaderPerViewInv` | `OneLeaderPerView` for two honest replicas | Proved for all reachable states and valid traces |
 | `WellFormedBranchInv` | `WellFormedBranches` for honest replicas | Initialization proved; preservation pending |
-| `ViewMonotonicInv` | `ViewMonotonic` for honest replicas | Pending |
-| `ViewStabilizationInv` | `ViewStabilization` for honest replicas | Pending |
+| `ViewMonotonicInv` | `ViewMonotonic` for honest replicas | Derived from `WellFormedBranches`; reachable-state branch validity still pending |
+| `ViewStabilizationInv` | `ViewStabilization` for honest replicas | Derived from `WellFormedBranches`; reachable-state branch validity still pending |
 | `CommittedBranchAppendOnlyProp` | `CommittedAppendOnly` while the **post-state** is still clean | Pending |
 | `AuditedBranchAppendOnlyProp` | `AuditedAppendOnly` for honest replicas | Pending |
-| `MonotonicAuditedIndexProp` | `MonotonicAuditIndex` for honest replicas | Local `refresh` lemma proved; full step result pending |
+| `MonotonicAuditedIndexProp` | `MonotonicAuditIndex` for honest replicas | Proved for every enabled step, even from arbitrary states, and valid traces |
 
 With arbitrary faulty local-state replacement, a faulty node can erase its
 committed/audited state on the first malicious step. Consequently, the original
@@ -184,10 +191,12 @@ out empty batches.
 
 Established general facts include audit-quorum intersection beyond `fsafe`,
 append-only block/signature stores under every step, a monotonic attack counter,
-stutter enabledness, the initialization facts above, local audit-index monotonicity,
-Byzantine state-update isolation, and inability of Byzantine signing to mint
-another identity's signature. The trace interpreter is proved sound for
-`CCF.Execution.Run` and reachability.
+stutter enabledness, the initialization facts above, honest leader designation,
+election safety, audit-index monotonicity across every action, Byzantine
+state-update isolation, and inability of Byzantine signing to mint another
+identity's signature. Local preservation covers ordinary handlers, rejected
+messages, all adversarial actions, and stuttering. The trace interpreter is
+proved sound for `CCF.Execution.Run` and reachability.
 
 The regression theorem `unsigned_commit_counterexample` proves that a reachable
 state can have an honest replica with audit index 1 and commit index 0: a malicious
@@ -198,8 +207,11 @@ not evidence that the paper's auditing agreement guarantee is false.
 The unfinished proofs need an inductive relation between issued signatures,
 honest voting histories, certificates, and installed branches, followed by
 fast/slow audit preservation through view changes. Bounded trace examples do not
-replace those arguments. Optional trace theorems inherit the unfinished
-reachable-state/step proofs and are explicitly marked as conditional.
+replace those arguments. The six remaining placeholders are index bounds,
+committed agreement, audited agreement, branch validity, committed append-only,
+and audited append-only. The optional agreement and append-only trace theorems
+inherit unfinished proofs and are explicitly marked as conditional; the
+audit-index trace theorem instead delegates to the checked public theorem.
 
 ## Regression coverage and TLA+ correspondence
 

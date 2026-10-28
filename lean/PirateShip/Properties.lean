@@ -2,6 +2,8 @@ module
 
 public import PirateShip.Properties.Defs
 public import PirateShip.Proofs.Foundations
+public import PirateShip.Proofs.Local
+public import PirateShip.Proofs.BranchShape
 
 @[expose] public section
 
@@ -20,5 +22,34 @@ theorem signatures_persist (c : Config) (before after : State) (a : Action)
     (transition : (transitionSystem c).step before a = some after) :
     before.signatures.IsPrefix after.signatures := by
   exact Proofs.step_signatures_prefix c before after a transition
+
+/-- Honest leaders in the same view are the unique designated replica. -/
+theorem election_safety (c : Config) (s : State)
+    (reachable : (transitionSystem c).Reachable s) : OneLeaderPerView c s := by
+  exact Proofs.election_safety c s reachable
+
+/-- Every enabled step preserves honest audit indices, even from an arbitrary state. -/
+theorem monotonic_audit_index (c : Config) (before after : State) (a : Action)
+    (transition : step c before a = some after) : MonotonicAuditIndex c before after := by
+  exact Proofs.monotonic_audit_index c before after a transition
+
+theorem view_monotonic_of_well_formed (c : Config) (s : State)
+    (wellFormed : WellFormedBranches c s) : ViewMonotonic c s := by
+  exact Proofs.view_monotonic_of_well_formed c s wellFormed
+
+theorem view_stabilization_of_well_formed (c : Config) (s : State)
+    (wellFormed : WellFormedBranches c s) : ViewStabilization c s := by
+  exact Proofs.view_stabilization_of_well_formed c s wellFormed
+
+theorem election_safety_on_trace (c : Config) (trace : Trace)
+    (valid : trace.Valid (transitionSystem c)) : Always (OneLeaderPerView c) trace := by
+  intro s member
+  exact election_safety c s (valid.reachable member)
+
+theorem monotonic_audit_index_on_trace (c : Config) (trace : Trace)
+    (valid : trace.Valid (transitionSystem c)) : AlwaysStep (MonotonicAuditIndex c) trace := by
+  intro i before after current next
+  obtain ⟨action, transition⟩ := valid.2 i before after current next
+  exact monotonic_audit_index c before after action transition
 
 end PirateShip.Properties
