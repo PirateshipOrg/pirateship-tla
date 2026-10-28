@@ -12,6 +12,9 @@ faults, with safety properties checked by TLC.
 - `MCpirateship.tla` and `MCpirateship*.cfg` define exhaustive model checks.
 - `SIMpirateship.tla` and `SIMpirateship*.cfg` define randomized simulations.
 - `SIMpirateship.ipynb` analyzes simulation output.
+- [`lean/`](lean/README.md) contains a paper-led Lean specification using CCF's
+  transition-system framework, checked regression traces, and an explicit
+  inventory of unfinished safety proofs.
 
 ## Running TLC
 
