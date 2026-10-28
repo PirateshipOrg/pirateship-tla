@@ -6,13 +6,14 @@ This is not a literal translation or a fully verified consensus protocol.
 
 The default `PirateShip` library contains no `sorry` and its checked lemmas and
 trace witnesses pass independent kernel replay. **General consensus safety
-proofs are still incomplete.** Six explicitly marked `sorry` placeholders remain in
+proofs are still incomplete.** Five explicitly marked `sorry` placeholders remain in
 the separate, non-default [PirateShipObligations](PirateShipObligations/Pending.lean)
-library. Eight original safety targets remain unproved: view ordering and
-stabilization are now derived from the still-pending branch-validity invariant.
-Election safety and audit-index monotonicity, including their trace results,
-are fully proved in the default library. Optional declarations that depend on
-the remaining placeholders must not be used as established theorems.
+library, covering five unresolved original safety targets. Election safety,
+audit-index monotonicity, branch validity, view ordering, and stabilization,
+including their trace results, are fully proved in the default library.
+Honest commit-index bounds are also proved; the audit-index part of `IndexBounds`
+remains open. Optional declarations that depend on the remaining placeholders
+must not be used as established theorems.
 
 ## Build and validate
 
@@ -59,6 +60,7 @@ package from its `lean/common` subdirectory, not copied or reimplemented.
 | View ordering and stabilization derived from branch validity | [Proofs/BranchShape.lean](PirateShip/Proofs/BranchShape.lean) |
 | Authentication and branch validity under append-only history growth | [Proofs/History.lean](PirateShip/Proofs/History.lean) |
 | Validated branch reconstruction, commit bounds, and election candidates | [Proofs/BranchValidity.lean](PirateShip/Proofs/BranchValidity.lean) |
+| Coupled reachable branch/commit/installed-view invariant | [Proofs/WellFormed.lean](PirateShip/Proofs/WellFormed.lean) |
 | Executable traces and reachable witnesses | [Tests/CanonicalTraces.lean](PirateShip/Tests/CanonicalTraces.lean) |
 | Unfinished general safety proofs | [PirateShipObligations/Pending.lean](PirateShipObligations/Pending.lean) |
 
@@ -170,14 +172,14 @@ model. These choices do not establish equivalence to the Rust implementation.
 | Original target | Lean interpretation | Status |
 | --- | --- | --- |
 | `TypeOK` | Typed records, lists, natural-number fields, optional QCs; malformed Byzantine contents are checked on receipt rather than prohibited globally | Structurally encoded; semantic branch validity is separate |
-| `IndexBoundsInv` | `IndexBounds`: honest commit and audit indices each lie within the local branch | Initialization proved; preservation pending |
+| `IndexBoundsInv` | `IndexBounds`: honest commit and audit indices each lie within the local branch | Commit-index bound proved for all reachable states; audit-index bound pending |
 | `auditIndex <= commitIndex` conjunct | `AuditBelowCommit` | **Refuted** under arbitrary Byzantine commit hints |
 | `BranchInv` | `CommittedAgreement` in clean states | Initialization proved; general result pending |
 | `AuditBranchInv` | `AuditedAgreement` for honest replicas | Initialization proved; general result pending |
 | `OneLeaderPerViewInv` | `OneLeaderPerView` for two honest replicas | Proved for all reachable states and valid traces |
-| `WellFormedBranchInv` | `WellFormedBranches` for honest replicas | Initialization and validity under store growth proved; honest local branch construction invariant pending |
-| `ViewMonotonicInv` | `ViewMonotonic` for honest replicas | Derived from `WellFormedBranches`; reachable-state branch validity still pending |
-| `ViewStabilizationInv` | `ViewStabilization` for honest replicas | Derived from `WellFormedBranches`; reachable-state branch validity still pending |
+| `WellFormedBranchInv` | `WellFormedBranches` for honest replicas | Proved for all reachable states and valid traces |
+| `ViewMonotonicInv` | `ViewMonotonic` for honest replicas | Proved for all reachable states and valid traces |
+| `ViewStabilizationInv` | `ViewStabilization` for honest replicas | Proved for all reachable states and valid traces |
 | `CommittedBranchAppendOnlyProp` | `CommittedAppendOnly` while the **post-state** is still clean | Pending |
 | `AuditedBranchAppendOnlyProp` | `AuditedAppendOnly` for honest replicas | Pending |
 | `MonotonicAuditedIndexProp` | `MonotonicAuditIndex` for honest replicas | Proved for every enabled step, even from arbitrary states, and valid traces |
@@ -210,10 +212,13 @@ index is already in bounds. Locally formed certificates are valid same-view
 certificates for branch members; branch selection with valid evidence returns
 a valid branch from views strictly below the new positive view.
 
-These are supporting lemmas, not a proof of reachable `WellFormedBranches`:
-the latter still needs a coupled induction over honest branch construction,
-installed views, and commit-index bounds. The six remaining placeholders and
-eight unresolved original safety targets are unchanged by these supporting proofs.
+The coupled `NodeInvariant` combines branch validity, commit-index bounds, and
+the requirement that an installed branch tip matches the node's current view.
+Its preservation proof covers every normal handler, rejected delivery, timeout,
+adversarial action, and stutter. Induction over CCF reachability establishes
+`WellFormedBranches` and honest commit-index bounds. View ordering and
+stabilization then follow without unfinished assumptions. The proof does not
+add safety guards to the protocol or assume audit-history preservation.
 
 The regression theorem `unsigned_commit_counterexample` proves that a reachable
 state can have an honest replica with audit index 1 and commit index 0: a malicious
@@ -224,8 +229,8 @@ not evidence that the paper's auditing agreement guarantee is false.
 The unfinished proofs need an inductive relation between issued signatures,
 honest voting histories, certificates, and installed branches, followed by
 fast/slow audit preservation through view changes. Bounded trace examples do not
-replace those arguments. The six remaining placeholders are index bounds,
-committed agreement, audited agreement, branch validity, committed append-only,
+replace those arguments. The five remaining placeholders are the audit-index
+part of index bounds, committed agreement, audited agreement, committed append-only,
 and audited append-only. The optional agreement and append-only trace theorems
 inherit unfinished proofs and are explicitly marked as conditional; the
 audit-index trace theorem instead delegates to the checked public theorem.

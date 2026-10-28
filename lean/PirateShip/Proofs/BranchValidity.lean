@@ -145,4 +145,77 @@ theorem chosen_branch_valid (c : Config) (s : State) (view : Nat)
   · simpa [sameView] using changed.1.1.1.2
   · simpa [sameView, chosenEq] using changed.2
 
+theorem valid_branch_append (c : Config) (s : State) (branch : Branch)
+    (id : BlockId) (b : Block) (valid : validBranch c s branch = true)
+    (found : s.blocks[id]? = some b) (signed : signedBlock c s id = true)
+    (parent : b.parent = branch.getLast?)
+    (ordered : (b.parent.all fun p => (s.blocks[p]?).any (fun a => a.view <= b.view)) = true)
+    (hint : b.commitHint <= branch.length + 1)
+    (transactions : (if b.stabilization then b.transactions.isEmpty && b.view > 0
+      else !b.transactions.isEmpty && b.transactions.all c.transactions.contains) = true)
+    (stabilized : (b.parent.all fun p =>
+      (s.blocks[p]?).all (fun a => a.view == b.view || b.stabilization)) = true)
+    (qc : (b.auditQC.all fun certificate =>
+      validCertificate c s certificate && certificate.view == b.view &&
+        branch.contains certificate.block) = true) :
+    validBranch c s (branch ++ [id]) = true := by
+  apply List.all_eq_true.mpr
+  intro entry member
+  rcases entry with ⟨query, index⟩
+  have atIndex := List.mk_mem_zipIdx_iff_getElem?.mp member
+  by_cases earlier : index < branch.length
+  · rw [List.getElem?_append_left earlier] at atIndex
+    have checked := List.all_eq_true.mp valid (query, index)
+      (List.mk_mem_zipIdx_iff_getElem?.mpr atIndex)
+    simpa only [List.take_append_of_le_length (Nat.le_of_lt earlier)] using checked
+  · have bound := (List.getElem?_eq_some_iff.mp atIndex).1
+    simp only [List.length_append, List.length_singleton] at bound
+    have indexEq : index = branch.length := by omega
+    subst index
+    simp only [List.getElem?_append_right (Nat.le_refl _), Nat.sub_self,
+      List.getElem?_cons_zero, Option.some.injEq] at atIndex
+    subst query
+    simp only [found, Option.any_some,
+      List.take_append_of_le_length (Nat.le_refl _), List.take_length, Bool.and_eq_true]
+    exact ⟨⟨⟨⟨⟨⟨signed, beq_iff_eq.mpr parent⟩, ordered⟩,
+      decide_eq_true_eq.mpr hint⟩, transactions⟩, stabilized⟩, qc⟩
+
+theorem chainAux_last (blocks : List Block) (fuel : Nat) (id : BlockId) (branch : Branch)
+    (found : chainAux blocks fuel id = some branch) : branch.getLast? = some id := by
+  cases fuel with
+  | zero => simp [chainAux] at found
+  | succ fuel =>
+    simp only [chainAux, bind, pure, Option.bind] at found
+    split at found
+    · contradiction
+    · dsimp only at found
+      split at found
+      · simpa using congrArg (fun result => result.bind List.getLast?) found.symm
+      · split at found
+        · contradiction
+        · simpa using congrArg (fun result => result.bind List.getLast?) found.symm
+
+theorem commonLength_le_right (left right : Branch) : commonLength left right <= right.length := by
+  induction left generalizing right with
+  | nil => simp [commonLength]
+  | cons a rest ih =>
+    cases right with
+    | nil => simp [commonLength]
+    | cons b tail =>
+      simp only [commonLength, List.length_cons]
+      have bound := ih tail
+      split <;> omega
+
+theorem valid_branch_hint_bound (c : Config) (s : State) (branch : Branch)
+    (valid : validBranch c s branch = true) (id : BlockId) (b : Block)
+    (member : id ∈ branch) (found : s.blocks[id]? = some b) :
+    b.commitHint <= branch.length := by
+  obtain ⟨i, atIndex⟩ := List.mem_iff_getElem?.mp member
+  have bound := (List.getElem?_eq_some_iff.mp atIndex).1
+  have checked := List.all_eq_true.mp valid (id, i)
+    (List.mk_mem_zipIdx_iff_getElem?.mpr atIndex)
+  simp only [found, Option.any_some, Bool.and_eq_true, decide_eq_true_eq] at checked
+  have hint := checked.1.1.1.2
+  omega
+
 end PirateShip.Proofs

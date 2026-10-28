@@ -14,9 +14,11 @@ namespace PirateShipObligations
 
 open PirateShip.Model PirateShip.Properties
 
-/-- Pending: bounds after quorum-backed branch replacement and every audit rule. -/
+/-- Commit bounds are proved; audit bounds across branch replacement remain pending. -/
 theorem index_bounds (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : IndexBounds c s := by
+  intro r honest
+  refine ⟨PirateShip.Properties.commit_index_bounds c s reachable r honest, ?_⟩
   sorry
 
 /-- Pending: clean-execution history invariant linking majority votes and stabilization. -/
@@ -34,20 +36,20 @@ theorem election_safety (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : OneLeaderPerView c s := by
   exact PirateShip.Properties.election_safety c s reachable
 
-/-- Pending: coupled honest branch construction, installed-view, and commit-index invariants. -/
+/-- Proved by the checked coupled branch/commit/installed-view invariant. -/
 theorem well_formed_branches (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : WellFormedBranches c s := by
-  sorry
+  exact PirateShip.Properties.well_formed_branches c s reachable
 
-/-- Conditional only on the unfinished branch-validity invariant. -/
+/-- Proved in the checked library; retained here for compatibility. -/
 theorem view_monotonic (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : ViewMonotonic c s := by
-  exact view_monotonic_of_well_formed c s (well_formed_branches c s reachable)
+  exact PirateShip.Properties.view_monotonic c s reachable
 
-/-- Conditional only on the unfinished branch-validity invariant. -/
+/-- Proved in the checked library; retained here for compatibility. -/
 theorem view_stabilization (c : Config) (s : State)
     (reachable : (transitionSystem c).Reachable s) : ViewStabilization c s := by
-  exact view_stabilization_of_well_formed c s (well_formed_branches c s reachable)
+  exact PirateShip.Properties.view_stabilization c s reachable
 
 /-- Pending: clean view changes preserve committed history, modulo empty control batches. -/
 theorem committed_append_only (c : Config) (before after : State) (a : Action)

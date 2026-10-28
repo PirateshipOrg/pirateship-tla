@@ -6,6 +6,7 @@ public import PirateShip.Proofs.Local
 public import PirateShip.Proofs.BranchShape
 public import PirateShip.Proofs.History
 public import PirateShip.Proofs.BranchValidity
+public import PirateShip.Proofs.WellFormed
 
 @[expose] public section
 
@@ -61,6 +62,38 @@ theorem view_monotonic_of_well_formed (c : Config) (s : State)
 theorem view_stabilization_of_well_formed (c : Config) (s : State)
     (wellFormed : WellFormedBranches c s) : ViewStabilization c s := by
   exact Proofs.view_stabilization_of_well_formed c s wellFormed
+
+theorem well_formed_branches (c : Config) (s : State)
+    (reachable : (transitionSystem c).Reachable s) : WellFormedBranches c s := by
+  exact Proofs.well_formed_branches c s reachable
+
+theorem commit_index_bounds (c : Config) (s : State)
+    (reachable : (transitionSystem c).Reachable s) :
+    forall r, c.honest r -> (s.nodes r).commitIndex <= (s.nodes r).branch.length := by
+  exact Proofs.commit_index_bounds c s reachable
+
+theorem view_monotonic (c : Config) (s : State)
+    (reachable : (transitionSystem c).Reachable s) : ViewMonotonic c s := by
+  exact Proofs.view_monotonic c s reachable
+
+theorem view_stabilization (c : Config) (s : State)
+    (reachable : (transitionSystem c).Reachable s) : ViewStabilization c s := by
+  exact Proofs.view_stabilization c s reachable
+
+theorem well_formed_branches_on_trace (c : Config) (trace : Trace)
+    (valid : trace.Valid (transitionSystem c)) : Always (WellFormedBranches c) trace := by
+  intro s member
+  exact well_formed_branches c s (valid.reachable member)
+
+theorem view_monotonic_on_trace (c : Config) (trace : Trace)
+    (valid : trace.Valid (transitionSystem c)) : Always (ViewMonotonic c) trace := by
+  intro s member
+  exact view_monotonic c s (valid.reachable member)
+
+theorem view_stabilization_on_trace (c : Config) (trace : Trace)
+    (valid : trace.Valid (transitionSystem c)) : Always (ViewStabilization c) trace := by
+  intro s member
+  exact view_stabilization c s (valid.reachable member)
 
 theorem election_safety_on_trace (c : Config) (trace : Trace)
     (valid : trace.Valid (transitionSystem c)) : Always (OneLeaderPerView c) trace := by
